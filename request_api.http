@@ -1,0 +1,21 @@
+
+
+# step 1
+POST http://localhost:5000/configure
+###
+
+# step 2 ajust camera position
+POST http://localhost:5000/stream/<camera id>
+###
+
+# step 3 set configuration to false
+POST http://localhost:5000/configure
+
+###
+# step 4 start buffer capture
+POST http://localhost:5000/start_capture
+###
+
+# step 5 save file
+POST http://localhost:5000/register_buffer
+###
