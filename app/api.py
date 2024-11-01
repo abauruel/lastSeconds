@@ -1,35 +1,61 @@
 from flask import Blueprint, jsonify, Response, stream_with_context
 from .video_thread import VideoCaptureThread
 from .show_camera_thread import thread_gen_frames, gen_frames
+from convert_videos import listar_arquivos_sem_extensao
 import threading
+import os
 
 bp = Blueprint('api', __name__)
 
 # uri = 'rtsp://admin:L20AB9FE@192.168.1.174:554/cam/realmonitor?channel=1&subtype=0&unicast=true&proto=Onvif'
 # uri = 'rtmp://127.0.0.1:1935/live'
 # Global video thread instance
-video_thread = None
+video_stream_1 = None
+video_stream_2 = None
 
 video_thread_1 = None
 video_thread_2 = None
 isConfiguring = False
 
+
+
 @bp.route('/configure', methods=['POST'])
 def show_camera_live():
-   global isConfiguring
+   global isConfiguring, video_stream_1, video_stream_2
    isConfiguring = not isConfiguring
    print(isConfiguring)
-   return jsonify({'message': 'Configuration is enableD.'}), 200
+   if isConfiguring == False :
+        if video_stream_1 is not None and video_stream_1.is_alive():
+            video_stream_1.join()
+            video_stream_1 = None
+            
+        if video_stream_2 is not None and video_stream_2.is_alive():
+            video_stream_2.join()
+            video_stream_2 = None
+
+        return jsonify({'message': 'Configuration is disabled.'}), 200
+   else:
+    return jsonify({'message': 'Configuration is enableD.'}), 200
+
     
 @bp.route("/stream/<int:id>")
 def stream(id):
-    global isConfiguring
+    global isConfiguring, video_stream_1, video_stream_2
     if isConfiguring :
-        thread = threading.Thread(target=thread_gen_frames, args=(id,))
-        thread.start()
-        return Response(
-            gen_frames(id), mimetype='multipart/x-mixed-replace; boundary=frame')
+        if (video_stream_1 is None or not video_stream_1.is_alive()) and (video_stream_2 is None or not video_stream_2.is_alive()):
+            if int(id) == 0 :
+                video_stream_1 = threading.Thread(target=thread_gen_frames, args=(id,))
+                video_stream_1.start()
+                return Response(
+                    gen_frames(id), mimetype='multipart/x-mixed-replace; boundary=frame')
+
+            if int(id) == 2 :
+                video_stream_2 = threading.Thread(target=thread_gen_frames, args=(id,))
+                video_stream_2.start()
+                return Response(
+                    gen_frames(id), mimetype='multipart/x-mixed-replace; boundary=frame')
     else :
+       
        return jsonify({'message': 'Configuration is not enabled.'}), 428
     
 
@@ -74,4 +100,31 @@ def registerbuffer():
     else:
         return jsonify({'message': 'Video buffer is not running.'}), 400
   else :
+       return jsonify({'message': 'Configuration is enabled.'}), 428
+  
+
+@bp.route('/stop_capture', methods=['POST'])
+def stop_capture():
+    global video_thread_1, video_thread_2, isConfiguring
+    if isConfiguring is False :
+        if (video_thread_1.is_alive()) or (video_thread_2.is_alive()):
+            video_thread_1.stop()
+
+            video_thread_2.stop()
+            return jsonify({'message': 'Video capture is stopped.'}), 200
+        else:
+            return jsonify({'message': 'Video capture is not running.'}), 400
+    else :
+       return jsonify({'message': 'Configuration is enabled.'}), 428
+    
+@bp.route('/convert_files', methods=['POST'])
+def convert_files():
+    global video_thread_1, video_thread_2, isConfiguring
+    if isConfiguring is False :
+        if (video_thread_1 is None or not video_thread_1.is_alive()) and (video_thread_2 is None or not video_thread_2.is_alive()):
+            listar_arquivos_sem_extensao('output')
+            return jsonify({'message': 'Video converted.'}), 200
+        else:
+            return jsonify({'message': 'Cannot convert videos'}), 400
+    else :
        return jsonify({'message': 'Configuration is enabled.'}), 428

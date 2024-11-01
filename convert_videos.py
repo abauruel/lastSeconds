@@ -2,7 +2,7 @@ import os
 import time 
 
 def generateThumb(file):
-    command = f'ffmpeg -loglevel error -y -i {file} -ss 00:00:01.000 -vframes 1 {file}.png'
+    command = f'ffmpeg -loglevel error -y -i {file} -ss 00:00:03.000 -vframes 1 {file}.png'
     proc = os.popen(command)
     proc.close()
 
@@ -25,5 +25,5 @@ def listar_arquivos_sem_extensao(diretorio):
         convertFile(f'{diretorio}/{arquivo}')
 
 # Exemplo de uso
-diretorio = 'output'
-listar_arquivos_sem_extensao(diretorio)
+# diretorio = 'output'
+# listar_arquivos_sem_extensao(diretorio)

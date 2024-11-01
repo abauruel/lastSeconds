@@ -168,3 +168,5 @@ streams-volume
 *.png
 
 draft
+
+node_modules
