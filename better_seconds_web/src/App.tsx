@@ -1,16 +1,53 @@
 import { useState, useRef, useEffect } from 'react'
+import axios from "axios";
 
 import './App.css'
 
-function App() {
-  
+type VideoProps = {
+  name: string,
+  thumbnail: string,
+  url: string
+}
 
- 
+function App() {
+  const [videos, setVideos] = useState<VideoProps[]>([]);
+
+  useEffect(() => {
+    const fetchVideos = async () => {
+      try {
+        const response = await axios.get("http://localhost:3333/api/videos");
+        setVideos(response.data);
+      } catch (error) {
+        console.error("Erro ao buscar vídeos:", error);
+      }
+    };
+    fetchVideos();
+  }, []);
+
+
   return (
-    <>
-      <img src='http://localhost:5000/stream/0' width={"auto"} height={"auto"} />
-      <img src='http://localhost:5000/stream/2' width={"auto"} height={"auto"} />
-    </>
+
+    <div className='container'>
+      <h1>Registro de gravações</h1>
+      <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+        {videos?.map((video) => (
+          <div key={video.name} style={{ display: "flex", alignItems: "center" }} className='video-item video-thumbnail'>
+            <img
+
+              src={`http://localhost:3333${video.thumbnail}`}
+              alt={video.name}
+              style={{ width: "150px", height: "auto", marginRight: "10px", borderRadius: "10px" }}
+            />
+            <div className='video-details' style={{ display: "flex", flexDirection: "column", alignItems: "start", justifyContent: "center" }}>
+              <p ><a href={`http://localhost:3333${video.thumbnail.replace('.png', '')}`} target="_blank">{video.name}</a></p>
+              <a href={`http://localhost:3333${video.url}`} download>
+                <button className='download-btn'>Download</button>
+              </a>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div >
   )
 }
 
