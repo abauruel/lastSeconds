@@ -1,71 +1,79 @@
-import cv2
 import threading
-import datetime
+from datetime import datetime
 from collections import deque
+# from .save_file import SaveFile
+
+
+from linuxpy.video.device import Device, BufferType, Memory, VideoCapture, VideoOutput
+import time
+
+def saveFile(source, buffer):
+        now = datetime.now()
+        output_file = f'output/cam_{source}_{now.strftime("%Y%m%d_%H%M%S")}'
+        with open(output_file, 'wb') as video_file:
+            for frame in buffer:
+                video_file.write(frame.data)
+            
+
 
 class VideoCaptureThread(threading.Thread):
-    def __init__(self, source=0):
+    def __init__(self, source=0, buffer_size=168, devices_running=[]):
         super(VideoCaptureThread, self).__init__()
         self.source = source
-        self.stopped = False
-        self.frame = None
-        self.start_buffer = False
+        self.stopped = threading.Event()
+        self.fps = 25
         self.register_buffer = False
+        
+        
+      
 
+    
+            
     def run(self):
         # Open the video capture
-        cap = cv2.VideoCapture(self.source)
-        # Get the frame width and height from the capture
-        frame_width= int(cap.get(3))
-        frame_height= int(cap.get(4))
-        frame_buffer = deque(maxlen=240)
-
-        size = (frame_width, frame_height)
+        duration = 7
+        total_frame = self.fps*(duration+2)
+        frame_count = 0
+        frame_buffer = deque(maxlen=total_frame)
+       
+        with Device.from_id(self.source) as device:
+            device.set_format(BufferType.VIDEO_CAPTURE, 1280, 720, "H264")
+            device.set_fps( BufferType.VIDEO_CAPTURE, self.fps)
+            start_time = time.time()
+            print(frame_buffer)
         
-        # Create the video writer
-        
-        # Check if the capture is open
-        if not cap.isOpened():
-            print(f"Error: Could not open video source {self.source}")
-            return
-        
-        while not self.stopped:
-            # Capture frame-by-frame
-            ret, frame = cap.read()
-            if not ret:
-                print("Error: Failed to capture frame")
-                break
             
-            if self.start_buffer:
-                # Check if the frame buffer is full
-                if len(frame_buffer) == 240:
-                    frame_buffer.popleft()
+            # try:
+            while not self.stopped.is_set():
+                # Capture frame-by-frame
+                for frame in device:
+                    frame_count += 1
+                    
+                    # Calcular o tempo decorrido
+                    elapsed_time = time.time() - start_time
 
-                # Append the frame to the frame buffer
-                frame_buffer.append(frame)
+                    # Calcular FPS
+                    fps = frame_count / elapsed_time
+                    # print(f"cam {self.source} fps: {fps :.2f}")
+                    # Calcular o tempo decorrido
+                    elapsed_time = time.time() - start_time
+                    if len(frame_buffer) == total_frame:
+                        frame_buffer.popleft()
+                    # Append the frame to the frame buffer
+                    frame_buffer.append(frame)
+                    
+                    # yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + frame_coverted + b"\r\n"
+
+                    
+                    if self.register_buffer:
+                        saveFile(self.source, frame_buffer)
+                        self.register_buffer = False
             
-            if self.register_buffer:
-                current_time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-                filename = f"output_{current_time}.mp4"
-                highlight_writer = cv2.VideoWriter(filename, cv2.VideoWriter_fourcc(*'mp4v'), 24, size)
-                for fps in frame_buffer:
-                    highlight_writer.write(fps)
-                highlight_writer.release()
-                self.register_buffer = False
-            # Store the frame
-            self.frame = frame
-        
-        # Release the capture when the thread is stopped
-        cap.release()
-
+                    
+                    
     def stop(self):
-        self.stopped = True
+        self.stopped.set()
 
-    def get_frame(self):
-        return self.frame
-    
-    def get_start_buffer(self):
-        self.start_buffer = True
-
-    def get_registerbuffer(self):
+    def set_register_buffer(self):
         self.register_buffer = True
+

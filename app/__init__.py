@@ -5,6 +5,7 @@ def create_app():
     
     # Register API routes
     from . import api
+    print(__name__)
     app.register_blueprint(api.bp)
 
     return app
