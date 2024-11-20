@@ -162,9 +162,9 @@ cython_debug/
 #.idea/
 
 .DS_Store
-recording
-streams-volume
-*.mp4
-*.png
+
+node_modules
+
+output
 
 draft

@@ -1,0 +1,11 @@
+POST http://localhost:5000/start_capture
+###
+
+POST http://localhost:5000/start_buffer
+###
+
+POST http://localhost:5000/register_buffer
+###
+
+
+POST http://localhost:5000/stop_capture
