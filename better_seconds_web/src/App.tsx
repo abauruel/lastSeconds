@@ -3,6 +3,8 @@ import axios from "axios";
 
 import './App.css'
 
+const backend_ip = '192.168.1.171'
+
 type VideoProps = {
   name: string,
   thumbnail: string,
@@ -15,7 +17,7 @@ function App() {
   useEffect(() => {
     const fetchVideos = async () => {
       try {
-        const response = await axios.get("http://localhost:3333/api/videos");
+        const response = await axios.get(`http://${backend_ip}:3333/api/videos`);
         setVideos(response.data);
       } catch (error) {
         console.error("Erro ao buscar vídeos:", error);
@@ -28,19 +30,19 @@ function App() {
   return (
 
     <div className='container'>
-      <h1>Registro de gravações</h1>
-      <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+      <h2>Registro de gravações</h2>
+      <div style={{ display: "flex", flexDirection: "column", gap: "10px", }}>
         {videos?.map((video) => (
           <div key={video.name} style={{ display: "flex", alignItems: "center" }} className='video-item video-thumbnail'>
             <img
 
-              src={`http://localhost:3333${video.thumbnail}`}
+              src={`http://${backend_ip}:3333${video.thumbnail}`}
               alt={video.name}
               style={{ width: "150px", height: "auto", marginRight: "10px", borderRadius: "10px" }}
             />
             <div className='video-details' style={{ display: "flex", flexDirection: "column", alignItems: "start", justifyContent: "center" }}>
-              <p ><a href={`http://localhost:3333${video.thumbnail.replace('.png', '')}`} target="_blank">{video.name}</a></p>
-              <a href={`http://localhost:3333${video.url}`} download>
+              <p ><a href={`http://${backend_ip}:3333${video.thumbnail.replace('.png', '')}`} target="_blank">{video.name}</a></p>
+              <a href={`http://${backend_ip}:3333${video.url}`} download>
                 <button className='download-btn'>Download</button>
               </a>
             </div>
