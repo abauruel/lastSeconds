@@ -3,7 +3,7 @@ import axios from "axios";
 
 import './App.css'
 
-const backend_ip = '192.168.1.171'
+const backend_ip = 'bettersecond'
 
 type VideoProps = {
   name: string,
