@@ -18,7 +18,6 @@ video_thread_2 = None
 isConfiguring = False
 
 
-
 @bp.route('/configure', methods=['POST'])
 def show_camera_live():
    global isConfiguring, video_stream_1, video_stream_2
@@ -29,9 +28,9 @@ def show_camera_live():
             video_stream_1.join()
             video_stream_1 = None
             
-        if video_stream_2 is not None and video_stream_2.is_alive():
-            video_stream_2.join()
-            video_stream_2 = None
+        # if video_stream_2 is not None and video_stream_2.is_alive():
+        #     video_stream_2.join()
+        #     video_stream_2 = None
 
         return jsonify({'message': 'Configuration is disabled.'}), 200
    else:
@@ -63,11 +62,12 @@ def stream(id):
 def start_capture():
     global video_thread_1, video_thread_2, isConfiguring
     if isConfiguring is False :
-        if (video_thread_1 is None or not video_thread_1.is_alive()) and (video_thread_2 is None or not video_thread_2.is_alive()):
+        if (video_thread_1 is None or not video_thread_1.is_alive()):
+        # and (video_thread_2 is None or not video_thread_2.is_alive()):
             video_thread_1 = VideoCaptureThread(source=0)  # Camera 1
-            video_thread_2 = VideoCaptureThread(source=2)  # Camera 2
+            # video_thread_2 = VideoCaptureThread(source=2)  # Camera 2
             video_thread_1.start()
-            video_thread_2.start()
+            # video_thread_2.start()
             return jsonify({'message': 'Video capture started.'}), 200
         else:
             return jsonify({'message': 'Video capture is already running.'}), 400
@@ -90,18 +90,21 @@ def show_source():
    
   
 @bp.route('/register_buffer', methods=['POST'])
-def registerbuffer():
+def register_buffer():
   global video_thread_1, video_thread_2, isConfiguring
   if isConfiguring is False :
-    if (video_thread_1 is not None and video_thread_1.is_alive()) and (video_thread_2 is not None and video_thread_2.is_alive()):
+    if (video_thread_1 is not None and video_thread_1.is_alive()): 
+    # and (video_thread_2 is not None and video_thread_2.is_alive()):
         video_thread_1.set_register_buffer()
-        video_thread_2.set_register_buffer()
+        # video_thread_2.set_register_buffer()
         return jsonify({'message': 'Video buffer registered.'}), 200
     else:
         return jsonify({'message': 'Video buffer is not running.'}), 400
   else :
        return jsonify({'message': 'Configuration is enabled.'}), 428
-  
+
+
+
 
 @bp.route('/stop_capture', methods=['POST'])
 def stop_capture():
@@ -128,3 +131,6 @@ def convert_files():
             return jsonify({'message': 'Cannot convert videos'}), 400
     else :
        return jsonify({'message': 'Configuration is enabled.'}), 428
+    
+
+
