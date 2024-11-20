@@ -19,3 +19,12 @@ POST http://localhost:5000/start_capture
 # step 5 save file
 POST http://localhost:5000/register_buffer
 ###
+
+
+# step 6 
+POST http://localhost:5000/stop_capture
+###
+
+# step 7 
+POST http://localhost:5000/convert_files
+###

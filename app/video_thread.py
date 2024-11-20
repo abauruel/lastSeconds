@@ -20,7 +20,7 @@ class VideoCaptureThread(threading.Thread):
     def __init__(self, source=0, buffer_size=168, devices_running=[]):
         super(VideoCaptureThread, self).__init__()
         self.source = source
-        self.stopped = threading.Event()
+        self._stop_event = threading.Event()
         self.fps = 25
         self.register_buffer = False
         
@@ -44,11 +44,12 @@ class VideoCaptureThread(threading.Thread):
         
             
             # try:
-            while not self.stopped.is_set():
+            while not self._stop_event.is_set():
                 # Capture frame-by-frame
                 for frame in device:
                     frame_count += 1
-                    
+                    if self._stop_event.is_set():
+                        return
                     # Calcular o tempo decorrido
                     elapsed_time = time.time() - start_time
 
@@ -68,11 +69,12 @@ class VideoCaptureThread(threading.Thread):
                     if self.register_buffer:
                         saveFile(self.source, frame_buffer)
                         self.register_buffer = False
-            
+            print(f"Encerrando gravação para a câmera {self.source}")
                     
                     
     def stop(self):
-        self.stopped.set()
+        self._stop_event.set()
+        
 
     def set_register_buffer(self):
         self.register_buffer = True
