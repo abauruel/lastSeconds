@@ -1,9 +1,10 @@
-from flask import Blueprint, jsonify, Response, stream_with_context
+from flask import Blueprint, jsonify, Response, stream_with_context, request
 from .video_thread import VideoCaptureThread
 from .show_camera_thread import thread_gen_frames, gen_frames
 from convert_videos import listar_arquivos_sem_extensao
 import threading
 import os
+
 
 bp = Blueprint('api', __name__)
 
@@ -18,20 +19,24 @@ video_thread_2 = None
 isConfiguring = False
 
 
+
+
 @bp.route('/configure', methods=['POST'])
 def show_camera_live():
    global isConfiguring, video_stream_1, video_stream_2
-   isConfiguring = not isConfiguring
-   print(isConfiguring)
+   configuring = request.get_json()
+   isConfiguring = configuring.get('configure')
    if isConfiguring == False :
-        if video_stream_1 is not None and video_stream_1.is_alive():
+        if video_stream_1 is not None :
+            print("Stopping video stream 1...")
             video_stream_1.join()
             video_stream_1 = None
             
-        # if video_stream_2 is not None and video_stream_2.is_alive():
-        #     video_stream_2.join()
-        #     video_stream_2 = None
-
+        if video_stream_2 is not None:
+            print("Stopping video stream 2...")
+            video_stream_2.join()
+            video_stream_2 = None
+        
         return jsonify({'message': 'Configuration is disabled.'}), 200
    else:
     return jsonify({'message': 'Configuration is enableD.'}), 200
@@ -61,13 +66,13 @@ def stream(id):
 @bp.route('/start_capture', methods=['POST'])
 def start_capture():
     global video_thread_1, video_thread_2, isConfiguring
+    print(isConfiguring)
     if isConfiguring is False :
-        if (video_thread_1 is None or not video_thread_1.is_alive()):
-        # and (video_thread_2 is None or not video_thread_2.is_alive()):
+        if (video_thread_1 is None or not video_thread_1.is_alive()) and (video_thread_2 is None or not video_thread_2.is_alive()):
             video_thread_1 = VideoCaptureThread(source=0)  # Camera 1
-            # video_thread_2 = VideoCaptureThread(source=2)  # Camera 2
+            video_thread_2 = VideoCaptureThread(source=2)  # Camera 2
             video_thread_1.start()
-            # video_thread_2.start()
+            video_thread_2.start()
             return jsonify({'message': 'Video capture started.'}), 200
         else:
             return jsonify({'message': 'Video capture is already running.'}), 400
@@ -93,10 +98,9 @@ def show_source():
 def register_buffer():
   global video_thread_1, video_thread_2, isConfiguring
   if isConfiguring is False :
-    if (video_thread_1 is not None and video_thread_1.is_alive()): 
-    # and (video_thread_2 is not None and video_thread_2.is_alive()):
+    if (video_thread_1 is not None and video_thread_1.is_alive()) and (video_thread_2 is not None and video_thread_2.is_alive()):
         video_thread_1.set_register_buffer()
-        # video_thread_2.set_register_buffer()
+        video_thread_2.set_register_buffer()
         return jsonify({'message': 'Video buffer registered.'}), 200
     else:
         return jsonify({'message': 'Video buffer is not running.'}), 400
@@ -112,8 +116,10 @@ def stop_capture():
     if isConfiguring is False :
         if (video_thread_1.is_alive()) or (video_thread_2.is_alive()):
             video_thread_1.stop()
-
             video_thread_2.stop()
+            print("convert videos")
+            listar_arquivos_sem_extensao('output')
+
             return jsonify({'message': 'Video capture is stopped.'}), 200
         else:
             return jsonify({'message': 'Video capture is not running.'}), 400

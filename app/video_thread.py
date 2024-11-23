@@ -57,6 +57,7 @@ class VideoCaptureThread(threading.Thread):
                     fps = frame_count / elapsed_time
                     # print(f"cam {self.source} fps: {fps :.2f}")
                     # Calcular o tempo decorrido
+                    print(f"fps => {fps}")
                     elapsed_time = time.time() - start_time
                     if len(frame_buffer) == total_frame:
                         frame_buffer.popleft()
