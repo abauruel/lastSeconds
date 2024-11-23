@@ -11,7 +11,7 @@ type VideoProps = {
   url: string
 }
 
-function App() {
+export function Records() {
   const [videos, setVideos] = useState<VideoProps[]>([]);
 
   useEffect(() => {
@@ -31,6 +31,7 @@ function App() {
 
     <div className='container'>
       <h2>Registro de gravações</h2>
+      <a href="/">voltar</a>
       <div style={{ display: "flex", flexDirection: "column", gap: "10px", }}>
         {videos?.map((video) => (
           <div key={video.name} style={{ display: "flex", alignItems: "center" }} className='video-item video-thumbnail'>
@@ -53,4 +54,3 @@ function App() {
   )
 }
 
-export default App
