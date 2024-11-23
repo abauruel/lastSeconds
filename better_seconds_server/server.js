@@ -23,13 +23,26 @@ app.get("/api/videos", (req, res) => {
 
     const videos = files
       .filter((file) => file.endsWith(".mp4")) // filtra apenas arquivos de vídeo
-      .map((file) => ({
-        name: file,
-        thumbnail: `/thumbnails/${path.basename(file, ".mp4")}.mp4.png`, // thumb precisa estar no formato <nome do video>.jpg
-        url: `/api/download/${file}`
-      }));
+      .map((file) => (
+        {
+          name: file,
+          thumbnail: `/thumbnails/${path.basename(file, ".mp4")}.mp4.png`, // thumb precisa estar no formato <nome do video>.jpg
+          url: `/api/download/${file}`,
+        }))
 
-    res.json(videos);
+    const extractDateFromFilename = (filename) => {
+      const regex = /(\d{8}_\d{6})/;
+      const match = filename.match(regex);
+      return match ? match[1] : null;
+    };
+
+    const videosOrdered = videos.sort((a, b) => {
+      const dateA = extractDateFromFilename(a.name);
+      const dateB = extractDateFromFilename(b.name);
+      return dateB.localeCompare(dateA);
+    });
+
+    res.json(videosOrdered);
   });
 });
 
