@@ -18,3 +18,7 @@ h265 = HEVC
 
 ## Convert video raw from 
 ffmpeg -i output/video_cam0.raw -c:v copy output/video_cam0.mp4
+
+v4l2-ctl --device /dev/video2 --set-fmt-video=width=1280,height=720,pixelformat=H264 --stream-mmap --stream-to=- | ffmpeg -f rawvideo -pix_fmt yuv420p -s 1280x720 -i - \
+  -vcodec libx264 -preset ultrafast -tune zerolatency -r 24 \
+  -f flv rtmp://localhost/hls
