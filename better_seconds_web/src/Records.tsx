@@ -42,10 +42,16 @@ export function Records() {
               style={{ width: "150px", height: "auto", marginRight: "10px", borderRadius: "10px" }}
             />
             <div className='video-details' style={{ display: "flex", flexDirection: "column", alignItems: "start", justifyContent: "center" }}>
-              <p ><a href={`http://${backend_ip}:3333${video.thumbnail.replace('.png', '')}`} target="_blank">{video.name}</a></p>
-              <a href={`http://${backend_ip}:3333${video.url}`} download>
-                <button className='download-btn'>Download</button>
-              </a>
+              <p ><a href={`http://${backend_ip}:3333${video.thumbnail.replace('.jpeg', '')}`} target="_blank">{video.name}</a></p>
+              <div className='flex flex-row gap-2'>
+
+                <a href={`http://${backend_ip}:3333${video.url}`} download>
+
+                  <button className='download-btn'>Download</button>
+
+                </a>
+                <button className='text-red-600 border-red-600'>delete</button>
+              </div>
             </div>
           </div>
         ))}

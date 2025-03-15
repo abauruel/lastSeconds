@@ -26,7 +26,7 @@ app.get("/api/videos", (req, res) => {
       .map((file) => (
         {
           name: file,
-          thumbnail: `/thumbnails/${path.basename(file, ".mp4")}.mp4.png`, // thumb precisa estar no formato <nome do video>.jpg
+          thumbnail: `/thumbnails/${path.basename(file, ".mp4")}.mp4.jpeg`, // thumb precisa estar no formato <nome do video>.jpg
           url: `/api/download/${file}`,
         }))
 
@@ -51,6 +51,11 @@ app.get("/api/download/:filename", (req, res) => {
   const filePath = path.join(videosDir, req.params.filename);
   res.download(filePath);
 });
+
+app.delete("/api/download/:filename", (req, res) => {
+  const filename = req.params.filename
+  console.log(`filename ${filename}`)
+})
 
 const PORT = 3333;
 app.listen(PORT, () => console.log(`Servidor rodando na porta ${PORT}`));

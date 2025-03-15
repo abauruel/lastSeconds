@@ -20,8 +20,10 @@ export function Cameras() {
   return (
     <div className="flex flex-col">
       <button onClick={handleClose}>Fechar</button>
-      <img src={imgSrc1} />
-      <img src={imgSrc2} />
+      <div className='flex flex-row flex-wrap gap-1'>
+        <img src={imgSrc2} className='w-96 -scale-x-100' />
+        <img src={imgSrc1} className='w-96 -scale-x-100' />
+      </div>
     </div>
   )
 }
