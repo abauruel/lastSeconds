@@ -5,7 +5,7 @@ import threading
 import time
 
 button_pin = 17 # GPIO pin number
-led_pin = 27
+led_pin = 11
 
 # Initialize button and LED
 button = Button(button_pin)

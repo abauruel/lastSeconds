@@ -8,6 +8,7 @@ def create_app():
     CORS(app)
     with app.app_context():
         button_pressed_callback(8)
+        
     # Register API routes
     from . import api
     print(__name__)

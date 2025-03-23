@@ -1,11 +1,14 @@
 from flask import Blueprint, jsonify, Response, stream_with_context, request
 
 from .audio_player import play_song
+import app.bip as bip
+import app.led as led
 from .video_thread import VideoCaptureThread
 from .show_camera_thread import thread_gen_frames, gen_frames
 from convert_videos import listar_arquivos_sem_extensao
 import threading
 import os
+import time
 
 
 bp = Blueprint('api', __name__)
@@ -76,6 +79,9 @@ def start_capture():
             video_thread_1.start()
             video_thread_2.start()
             play_song(1)
+            bip.start_beep()
+            led.record_ligth(True)
+            # bip.cleanup_gpio()
             return jsonify({'message': 'Video capture started.'}), 200
         else:
             return jsonify({'message': 'Video capture is already running.'}), 400
@@ -102,9 +108,12 @@ def register_buffer():
   global video_thread_1, video_thread_2, isConfiguring
   if isConfiguring is False :
     if (video_thread_1 is not None and video_thread_1.is_alive()) and (video_thread_2 is not None and video_thread_2.is_alive()):
+        play_song(0)
+        bip.stop_record_beep()
         video_thread_1.set_register_buffer()
         video_thread_2.set_register_buffer()
-        play_song(0)
+        print("register buffer")
+        
         return jsonify({'message': 'Video buffer registered.'}), 200
     else:
         return jsonify({'message': 'Video buffer is not running.'}), 400
@@ -122,6 +131,9 @@ def stop_capture():
             video_thread_1.stop()
             video_thread_2.stop()
             print("convert videos")
+            bip.stop_beep()
+            # bip.cleanup_gpio()
+            led.stop_record_ligth()
             listar_arquivos_sem_extensao('output')
 
             return jsonify({'message': 'Video capture is stopped.'}), 200

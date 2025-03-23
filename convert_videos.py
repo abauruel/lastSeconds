@@ -9,14 +9,14 @@ def generateThumb(file):
     proc.close()
 
 def convertFile(filepath):
-    # command =  f'ffmpeg -loglevel error -y -i {filepath} -c:v copy {filepath}.mp4 && rm -rf {filepath}'
-    command =  (f'ffmpeg -fflags +genpts '
-                # f'-loglevel error -y '
-                f'-i {filepath} -vf "hflip,format=yuv420p" -b:v 2M -pix_fmt yuv420p '
-                f'-movflags +faststart '
-                f'-colorspace bt709 -color_trc bt709 -color_primaries bt709 -color_range pc '
-                f'-an '
-                f'{filepath}.mp4 && rm -rf {filepath}')
+    command =  f'ffmpeg -loglevel error -y -i {filepath} -c:v copy {filepath}.mp4 && rm -rf {filepath}'
+    # command =  (f'ffmpeg -fflags +genpts '
+    #             # f'-loglevel error -y '
+    #             f'-i {filepath} -vf "hflip,format=yuv420p" -b:v 2M -pix_fmt yuv420p '
+    #             f'-movflags +faststart '
+    #             f'-colorspace bt709 -color_trc bt709 -color_primaries bt709 -color_range pc '
+    #             f'-an '
+    #             f'{filepath}.mp4 && rm -rf {filepath}')
     # proc = os.popen(command)
     subprocess.run(command, shell=True, check=True)
     # time.sleep(2)

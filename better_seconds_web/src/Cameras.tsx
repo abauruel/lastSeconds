@@ -4,14 +4,14 @@ import { useNavigate } from 'react-router'
 export function Cameras() {
   const navigate = useNavigate()
 
-  const [imgSrc1, setImagSrc1] = useState("http://bettersecond:5000/stream/0")
-  const [imgSrc2, setImagSrc2] = useState("http://bettersecond:5000/stream/2")
+  const [imgSrc1, setImagSrc1] = useState("http://bettersecond.local:5000/stream/0")
+  const [imgSrc2, setImagSrc2] = useState("http://bettersecond.local:5000/stream/2")
 
   async function handleClose() {
     setImagSrc1("")
     setImagSrc2("")
 
-    const response = await axios.post("http://bettersecond:5000/configure", {
+    const response = await axios.post("http://bettersecond.local:5000/configure", {
       configure: false
     })
     navigate("/")
