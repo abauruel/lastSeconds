@@ -9,7 +9,7 @@ const app = express();
 
 app.use(cors())
 
-const videosDir = path.join(__dirname, "..", "output");
+const videosDir = path.join(__dirname, "..", "recordings", "streams");
 
 app.use("/thumbnails", express.static(videosDir));
 
@@ -54,7 +54,17 @@ app.get("/api/download/:filename", (req, res) => {
 
 app.delete("/api/download/:filename", (req, res) => {
   const filename = req.params.filename
-  console.log(`filename ${filename}`)
+  const filePath = path.join(videosDir, req.params.filename);
+
+  fs.unlink(filePath, (err) => {
+    if (err) {
+      console.error(`Erro ao deletar o arquivo ${filename}:`, err);
+      return res.status(500).json({ error: "Erro ao deletar o arquivo" });
+    }
+
+    console.log(`Arquivo ${filename} deletado com sucesso.`);
+    res.status(200).json({ message: `Arquivo ${filename} deletado com sucesso.` });
+  });
 })
 
 const PORT = 3333;
