@@ -57,11 +57,7 @@ export function Configure() {
   }
 
   async function handleRegisterBuffer() {
-    setIsBuffering(true)
     await axios.post("http://bettersecond.local:5000/record")
-    setTimeout(() => {
-      setIsBuffering(false)
-    }, 3000)
   }
 
   useEffect(() => {

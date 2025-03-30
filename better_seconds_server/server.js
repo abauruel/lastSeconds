@@ -9,7 +9,7 @@ const app = express();
 
 app.use(cors())
 
-const videosDir = path.join(__dirname, "..", "recordings", "streams");
+const videosDir = path.join(__dirname, "..", "..", "app", "recordings", "streams");
 
 app.use("/thumbnails", express.static(videosDir));
 
