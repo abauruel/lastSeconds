@@ -1,4 +1,5 @@
 import os
+import signal
 import subprocess
 from flask import Flask, jsonify
 from datetime import datetime
@@ -45,7 +46,7 @@ def start_ffmpeg_processes():
         "-c:v", "copy", "-preset", "ultrafast", "-tune", "zerolatency",  "-b:v", "800k", "-maxrate","1M", "-bufsize", "800k", "-an", "-f", "flv", "rtmp://localhost/live/stream1",
         "-c:v", "copy", "-f", "segment", "-segment_time", "1", "-segment_format", "mp4",
         "-reset_timestamps", "1", f"{BUFFER_DIR_VIDEO0}/buffer_video0_%03d.mp4"
-    ])
+    ], preexec_fn=os.setsid)  # Inicia o processo em um novo grupo de processos
 
     # Buffer circular para /dev/video2
     ffmpeg_process_1 = subprocess.Popen([
@@ -54,7 +55,7 @@ def start_ffmpeg_processes():
         "-c:v", "copy", "-preset", "ultrafast", "-tune", "zerolatency",  "-b:v", "800k", "-maxrate","1M", "-bufsize", "800k", "-an", "-f", "flv", "rtmp://localhost/live/stream2",
         "-c:v", "copy", "-f", "segment", "-segment_time", "1", "-segment_format", "mp4",
         "-reset_timestamps", "1", f"{BUFFER_DIR_VIDEO2}/buffer_video2_%03d.mp4"
-    ])
+    ], preexec_fn=os.setsid)
 
     print("Processos ffmpeg iniciados com buffer circular.")
 
@@ -103,7 +104,7 @@ def record_last_10_seconds():
 
 def generateThumb(file):
     print(f'Generating thumb for {file}')
-    command = f'ffmpeg -loglevel error -y -i ./{file} -ss 00:00:01.000 -vframes 1 {file}.jpeg '
+    command = f'ffmpeg -loglevel error -y -i ./{file} -ss 00:00:03.000 -vframes 1 {file}.jpeg '
     proc = os.popen(command)
     proc.close()
 
@@ -212,16 +213,38 @@ def cleanup():
     print("Finalizando os processos do ffmpeg...")
     global ffmpeg_process_0, ffmpeg_process_1
 
+    try:
+        if ffmpeg_process_0:
+            os.killpg(os.getpgid(ffmpeg_process_0.pid), signal.SIGTERM)
+            print("Processo ffmpeg_process_0 finalizado com sucesso.")
+        else:
+            print("ffmpeg_process_0 não foi inicializado.")
+
+        if ffmpeg_process_1:
+            os.killpg(os.getpgid(ffmpeg_process_1.pid), signal.SIGTERM)
+            print("Processo ffmpeg_process_1 finalizado com sucesso.")
+        else:
+            print("ffmpeg_process_1 não foi inicializado.")
+    except Exception as e:
+        print(f"Erro ao finalizar os processos do ffmpeg: {e}")
+    finally:
+        ffmpeg_process_0 = None
+        ffmpeg_process_1 = None
+        print("Cleanup concluído.")
+
+def check_ffmpeg_processes():
+    """Verifica o status dos processos ffmpeg."""
+    global ffmpeg_process_0, ffmpeg_process_1
+
     if ffmpeg_process_0 and ffmpeg_process_0.poll() is None:
-        ffmpeg_process_0.terminate()
-        ffmpeg_process_0.wait()
+        print("ffmpeg_process_0 ainda está rodando.")
+    else:
+        print("ffmpeg_process_0 não está rodando.")
 
     if ffmpeg_process_1 and ffmpeg_process_1.poll() is None:
-        ffmpeg_process_1.terminate()
-        ffmpeg_process_1.wait()
-
-    print("Todos os processos do ffmpeg foram finalizados.")
-
+        print("ffmpeg_process_1 ainda está rodando.")
+    else:
+        print("ffmpeg_process_1 não está rodando.")
 
 def main():
     try:
