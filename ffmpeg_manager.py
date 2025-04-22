@@ -5,8 +5,8 @@ from datetime import datetime
 
 class FFMpegManager:
     def __init__(self, buffer_dir_video0, buffer_dir_video2, final_dir, stream_dir):
-        self.buffer_dir_video0 = buffer_dir_video0
-        self.buffer_dir_video2 = buffer_dir_video2
+        self.buffer_dir_video0 = '/tmp/buffers/video0'
+        self.buffer_dir_video2 = '/tmp/buffers/video2'
         self.final_dir = final_dir
         self.stream_dir = stream_dir
         self.ffmpeg_process_0 = None
