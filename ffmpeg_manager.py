@@ -16,20 +16,24 @@ class FFMpegManager:
         
         """Inicia os processos ffmpeg com buffer circular."""
         self.ffmpeg_process_0 = subprocess.Popen([
-            "ffmpeg", "-fflags", "+genpts", "-f", "v4l2", "-input_format", "h264", "-video_size", "1280x720", "-r", "30", "-i", "/dev/video0",
+            "ffmpeg", "-loglevel", "info", "-fflags", "+genpts", "-f", "v4l2", "-input_format", "h264", "-video_size", "1280x720", "-r", "30", "-i", "/dev/video0",
 
             "-use_wallclock_as_timestamps", "1", "-fps_mode", "vfr",
             "-c:v", "copy", "-crf","18","-f", "segment", "-segment_time", "1", "-segment_format", "mp4",
-            "-reset_timestamps", "1", f"{self.buffer_dir_video0}/buffer_video0_%03d.mp4",
+            "-reset_timestamps", "1",
+            "-segment_wrap", "20",
+            f"{self.buffer_dir_video0}/buffer_video0_%03d.mp4",
             "-c:v", "copy", "-preset", "ultrafast", "-tune", "zerolatency", "-b:v", "6M", "-maxrate", "6M", "-bufsize", "12M", "-an", "-f", "flv", "rtmp://localhost/live/stream1"
         ], preexec_fn=os.setsid)
 
         self.ffmpeg_process_1 = subprocess.Popen([
-            "ffmpeg", "-fflags", "+genpts", "-f", "v4l2", "-input_format", "h264", "-video_size", "1280x720", "-r", "30", "-i", "/dev/video2",
+            "ffmpeg",  "-loglevel", "info", "-fflags", "+genpts", "-f", "v4l2", "-input_format", "h264", "-video_size", "1280x720", "-r", "30", "-i", "/dev/video2",
             "-use_wallclock_as_timestamps", "1", "-fps_mode", "vfr",
             "-c:v", "copy", "-preset", "ultrafast", "-tune", "zerolatency", "-b:v", "6M", "-maxrate", "6M", "-bufsize", "12M", "-an", "-f", "flv", "rtmp://localhost/live/stream2",
             "-c:v", "copy",  "-crf", "18","-f", "segment", "-segment_time", "1", "-segment_format", "mp4",
-            "-reset_timestamps", "1", f"{self.buffer_dir_video2}/buffer_video2_%03d.mp4"
+            "-reset_timestamps", "1", 
+            "-segment_wrap", "20",
+            f"{self.buffer_dir_video2}/buffer_video2_%03d.mp4"
         ], preexec_fn=os.setsid)
 
         print("Processos ffmpeg iniciados com buffer circular.")
