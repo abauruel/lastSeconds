@@ -8,7 +8,7 @@ def init_ffmpeg_routes(ffmpeg_manager):
 
     @ffmpeg_bp.route('/start', methods=['POST'])
     def handle_start():
-        ffmpeg_manager.clean_buffers()
+        ffmpeg_manager.clear_buffers()
         ffmpeg_manager.start_ffmpeg_processes()
         return jsonify({"status": "success", "message": "Processos do ffmpeg iniciados."}), 200
 
@@ -24,7 +24,7 @@ def init_ffmpeg_routes(ffmpeg_manager):
 
 
     @ffmpeg_bp.route('/clear_buffers', methods=['POST'])
-    def handle_clean_buffers():
+    def handle_clear_buffers():
         ffmpeg_manager.clear_buffers()
         return jsonify({"status": "success", "message": "Buffers limpos com sucesso."}), 200
     
