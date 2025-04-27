@@ -25,7 +25,7 @@ GPIO = setup_gpio()
 
 # Inicializa o gerenciador de ffmpeg
 ffmpeg_manager = FFMpegManager(BUFFER_DIR_VIDEO0, BUFFER_DIR_VIDEO2, FINAL_DIR, STREAM_DIR)
-
+ffmpeg_manager.start_ffmpeg_processes()
 # Inicializa o Flask
 app = create_app(ffmpeg_manager)
 
