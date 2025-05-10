@@ -20,7 +20,7 @@ paths:
   
 hls: yes
 hlsSegmentCount: 7
-hlsSegmentDuration: 4s
+hlsSegmentDuration: 2s
 hlsAllowOrigin: '*'
 hlsDirectory: './'
 writeQueueSize: 8192

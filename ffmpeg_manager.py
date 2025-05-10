@@ -21,18 +21,18 @@ class FFMpegManager:
             "-use_wallclock_as_timestamps", "1", "-fps_mode", "vfr",
             "-c:v", "copy", "-crf","18","-f", "segment", "-segment_time", "1", "-segment_format", "mp4",
             "-reset_timestamps", "1",
-            "-segment_wrap", "20",
+            "-segment_wrap", "100",
             f"{self.buffer_dir_video0}/buffer_video0_%03d.mp4",
-            "-c:v", "copy", "-preset", "ultrafast", "-tune", "zerolatency", "-b:v", "6M", "-maxrate", "6M", "-bufsize", "12M", "-an", "-f", "flv", "rtmp://localhost/live/stream1"
+            "-c:v", "copy", "-preset", "ultrafast", "-tune", "zerolatency", "-b:v", "4M", "-maxrate", "4M", "-bufsize", "4M", "-an", "-f", "flv", "rtmp://localhost/live/stream1"
         ], preexec_fn=os.setsid)
 
         self.ffmpeg_process_1 = subprocess.Popen([
             "ffmpeg",  "-loglevel", "info", "-fflags", "+genpts", "-f", "v4l2", "-input_format", "h264", "-video_size", "1280x720", "-r", "30", "-i", "/dev/video2",
             "-use_wallclock_as_timestamps", "1", "-fps_mode", "vfr",
-            "-c:v", "copy", "-preset", "ultrafast", "-tune", "zerolatency", "-b:v", "6M", "-maxrate", "6M", "-bufsize", "12M", "-an", "-f", "flv", "rtmp://localhost/live/stream2",
+            "-c:v", "copy", "-preset", "ultrafast", "-tune", "zerolatency", "-b:v", "4M", "-maxrate", "4M", "-bufsize", "4M", "-an", "-f", "flv", "rtmp://localhost/live/stream2",
             "-c:v", "copy",  "-crf", "18","-f", "segment", "-segment_time", "1", "-segment_format", "mp4",
             "-reset_timestamps", "1", 
-            "-segment_wrap", "20",
+            "-segment_wrap", "100",
             f"{self.buffer_dir_video2}/buffer_video2_%03d.mp4"
         ], preexec_fn=os.setsid)
 
@@ -60,8 +60,10 @@ class FFMpegManager:
         output_file_0 = os.path.join(self.stream_dir, f"stream1_{timestamp}.mp4")
         output_file_1 = os.path.join(self.stream_dir, f"stream2_{timestamp}.mp4")
 
-        buffer_files_0 = sorted([os.path.join(self.buffer_dir_video0, f) for f in os.listdir(self.buffer_dir_video0) if f.startswith("buffer_video0_")])[-5:]
-        buffer_files_1 = sorted([os.path.join(self.buffer_dir_video2, f) for f in os.listdir(self.buffer_dir_video2) if f.startswith("buffer_video2_")])[-5:]
+        buffer_files_0 = sorted([os.path.join(self.buffer_dir_video0, f) for f in os.listdir(self.buffer_dir_video0) if f.startswith("buffer_video0_")],
+                                 key=os.path.getmtime)[-6:]
+        buffer_files_1 = sorted([os.path.join(self.buffer_dir_video2, f) for f in os.listdir(self.buffer_dir_video2) if f.startswith("buffer_video2_")],
+                                key=os.path.getmtime)[-6:]
 
         if buffer_files_0:
             self._combine_segments(buffer_files_0, output_file_0)
