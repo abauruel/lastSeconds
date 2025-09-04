@@ -1,9 +1,11 @@
 import os
+import threading
 from flask import Flask, jsonify
 from gpio_config import setup_gpio, cleanup_gpio
 from ffmpeg_manager import FFMpegManager
 from gpio_button import register_button_callback
 from routes import create_app
+from send_pending_files import scheduler_send, init_db
 
 # Configurações
 BASE_DIR = "./recordings"
@@ -31,6 +33,10 @@ app = create_app(ffmpeg_manager)
 
 # Função principal
 def main():
+    # Inicializa banco e tabela se não existirem
+    init_db()
+    # Inicia o agendador de envio em thread separada
+    threading.Thread(target=scheduler_send, daemon=True).start()
     try:
         print("Servidor Flask rodando...")
         app.run(host="0.0.0.0", port=5000)

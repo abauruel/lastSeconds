@@ -2,6 +2,8 @@ import os
 import signal
 import subprocess
 from datetime import datetime
+import sqlite3
+from save_output_to_db import save_output_to_db
 
 class FFMpegManager:
     def __init__(self, buffer_dir_video0, buffer_dir_video2, final_dir, stream_dir):
@@ -90,6 +92,9 @@ class FFMpegManager:
             "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", temp_file, "-c:v", "copy", "-movflags", "+faststart", output_file
         ])
         os.remove(temp_file)
+    
+        save_output_to_db(output_file)
+
     
     
     def clear_buffers(self):
