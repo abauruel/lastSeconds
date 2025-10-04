@@ -1,7 +1,8 @@
 import os
 import signal
-import subprocess
 from datetime import datetime
+import subprocess
+from led_ws281x_new import blink_n_times, cleanup
 
 class FFMpegManager:
     def __init__(self, buffer_dir_video0, buffer_dir_video2, final_dir, stream_dir):
@@ -53,32 +54,40 @@ class FFMpegManager:
             self.ffmpeg_process_0 = None
             self.ffmpeg_process_1 = None
 
-    def record_last_10_seconds(self):
+    def record_last_10_seconds(self, cam_id=0):
         """Copia os últimos 10 segundos de stream para um novo arquivo."""
         print("Gravando os últimos 10 segundos de stream...")
+        
+        blink_n_times(color=(0, 255, 0), n=4, interval=0.2)
+        cleanup()
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_file_0 = os.path.join(self.stream_dir, f"stream1_{timestamp}.mp4")
         output_file_1 = os.path.join(self.stream_dir, f"stream2_{timestamp}.mp4")
 
         buffer_files_0 = sorted([os.path.join(self.buffer_dir_video0, f) for f in os.listdir(self.buffer_dir_video0) if f.startswith("buffer_video0_")],
                                  key=os.path.getmtime)[-6:]
+        
         buffer_files_1 = sorted([os.path.join(self.buffer_dir_video2, f) for f in os.listdir(self.buffer_dir_video2) if f.startswith("buffer_video2_")],
                                 key=os.path.getmtime)[-6:]
 
-        if buffer_files_0:
+        if cam_id == 0 and buffer_files_0:
             self._combine_segments(buffer_files_0, output_file_0)
             generateThumb(output_file_0)
             print(f"Gravação concluída: {output_file_0}")
         else:
             print("Erro: Nenhum arquivo encontrado no buffer para /dev/video0.")
 
-        if buffer_files_1:
+        if cam_id == 1 and buffer_files_1:
             self._combine_segments(buffer_files_1, output_file_1)
             generateThumb(output_file_1)
             print(f"Gravação concluída: {output_file_1}")
         else:
             print("Erro: Nenhum arquivo encontrado no buffer para /dev/video2.")
 
+        
+        # cleanup()
+     
+        
     def _combine_segments(self, segment_files, output_file):
         """Combina múltiplos arquivos de segmento em um único arquivo."""
         temp_file = f"{output_file}_list.txt"
@@ -113,6 +122,7 @@ class FFMpegManager:
         except Exception as e:
             print(f"Erro ao limpar os buffers: {e}")
             # return jsonify({"status": "error", "message": "Erro ao limpar os buffers."}), 500
+
 
 def generateThumb(file):
     print(f'Generating thumb for {file}')

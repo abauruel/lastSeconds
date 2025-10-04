@@ -4,6 +4,8 @@ from gpio_config import setup_gpio, cleanup_gpio
 from ffmpeg_manager import FFMpegManager
 from gpio_button import register_button_callback
 from routes import create_app
+from temperature_monitor import start_temperature_monitoring, stop_temperature_monitoring
+from led_ws281x_new import blink_n_times, cleanup, start_blinking
 
 # Configurações
 BASE_DIR = "./recordings"
@@ -26,15 +28,25 @@ GPIO = setup_gpio()
 # Inicializa o gerenciador de ffmpeg
 ffmpeg_manager = FFMpegManager(BUFFER_DIR_VIDEO0, BUFFER_DIR_VIDEO2, FINAL_DIR, STREAM_DIR)
 ffmpeg_manager.start_ffmpeg_processes()
+
+
+
+start_temperature_monitoring(BASE_DIR)
+
 # Inicializa o Flask
 app = create_app(ffmpeg_manager)
 
 # Função principal
 def main():
+    # Iniciar o monitoramento de temperatura
+    
+    
     try:
         print("Servidor Flask rodando...")
         app.run(host="0.0.0.0", port=5000)
     except KeyboardInterrupt:
+        print("Encerrando aplicação...")
+        stop_temperature_monitoring()  # Parar o monitoramento de temperatura
         ffmpeg_manager.stop_ffmpeg_processes()
         cleanup_gpio()
 

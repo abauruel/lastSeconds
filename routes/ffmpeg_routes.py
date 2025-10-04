@@ -16,6 +16,16 @@ def init_ffmpeg_routes(ffmpeg_manager):
     def handle_record():
         ffmpeg_manager.record_last_10_seconds()
         return jsonify({"status": "success", "message": "Gravação iniciada"}), 200
+    
+    @ffmpeg_bp.route('/record/cam1', methods=['POST'])
+    def handle_record_cam1():
+        ffmpeg_manager.record_last_10_seconds(cam_id=0)
+        return jsonify({"status": "success", "message": "Gravação iniciada"}), 200
+    
+    @ffmpeg_bp.route('/record/cam2', methods=['POST'])
+    def handle_record_cam2():
+        ffmpeg_manager.record_last_10_seconds(cam_id=1)
+        return jsonify({"status": "success", "message": "Gravação iniciada"}), 200
 
     @ffmpeg_bp.route('/stop', methods=['POST'])
     def handle_stop():
