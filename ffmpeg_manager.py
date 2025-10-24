@@ -2,7 +2,11 @@ import os
 import signal
 from datetime import datetime
 import subprocess
-from led_ws281x_new import blink_n_times, cleanup
+from led_ws281x_new import blink_n_times, cleanup, start_blinking
+import time
+from database import get_db, Video, VideoStatus
+
+device_name="rpi4bmobile"
 
 class FFMpegManager:
     def __init__(self, buffer_dir_video0, buffer_dir_video2, final_dir, stream_dir):
@@ -15,6 +19,7 @@ class FFMpegManager:
 
     def start_ffmpeg_processes(self):
         
+ 
         """Inicia os processos ffmpeg com buffer circular."""
         self.ffmpeg_process_0 = subprocess.Popen([
             "ffmpeg", "-loglevel", "info", "-fflags", "+genpts", "-f", "v4l2", "-input_format", "h264", "-video_size", "1280x720", "-r", "30", "-i", "/dev/video0",
@@ -24,7 +29,14 @@ class FFMpegManager:
             "-reset_timestamps", "1",
             "-segment_wrap", "100",
             f"{self.buffer_dir_video0}/buffer_video0_%03d.mp4",
+
             "-c:v", "copy", "-preset", "ultrafast", "-tune", "zerolatency", "-b:v", "4M", "-maxrate", "4M", "-bufsize", "4M", "-an", "-f", "flv", "rtmp://localhost/live/stream1"
+
+            # "-c:v", "copy", "-f", "segment", "-segment_time","1","-segment_format","mp4", 
+            # "-reset_timestamps", "1", "-strftime", "1", "-ignore_io_errors", "1", 
+            # "/media/pi/EC-N-64GB/bts/stream1/video0_%Y%m%d_%H%M%S_%03d.mp4"
+            
+            
         ], preexec_fn=os.setsid)
 
         self.ffmpeg_process_1 = subprocess.Popen([
@@ -35,6 +47,10 @@ class FFMpegManager:
             "-reset_timestamps", "1", 
             "-segment_wrap", "100",
             f"{self.buffer_dir_video2}/buffer_video2_%03d.mp4"
+
+            # "-c:v", "copy", "-f", "segment", "-segment_time","1","-segment_format","mp4", 
+            # "-reset_timestamps", "1", "-strftime", "1", "-ignore_io_errors", "1", 
+            # "/media/pi/EC-N-64GB/bts/stream2/video2_%Y%m%d_%H%M%S_%03d.mp4",
         ], preexec_fn=os.setsid)
 
         print("Processos ffmpeg iniciados com buffer circular.")
@@ -57,12 +73,22 @@ class FFMpegManager:
     def record_last_10_seconds(self, cam_id=0):
         """Copia os últimos 10 segundos de stream para um novo arquivo."""
         print("Gravando os últimos 10 segundos de stream...")
+        if cam_id == 0:
+            blink_n_times(color=(255, 0, 0), n=5, interval=0.2, direction="left")
+            cleanup()
+        if cam_id == 1:
+            blink_n_times(color=(0, 0, 255), n=5, interval=0.2, direction="right")
+            cleanup()
+        current_date = datetime.now()
+        date_folder = current_date.strftime("%Y%m%d")
+        date_folder_path = os.path.join(self.stream_dir, date_folder)
         
-        blink_n_times(color=(0, 255, 0), n=4, interval=0.2)
-        cleanup()
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_file_0 = os.path.join(self.stream_dir, f"stream1_{timestamp}.mp4")
-        output_file_1 = os.path.join(self.stream_dir, f"stream2_{timestamp}.mp4")
+        # Create date folder if it doesn't exist
+        os.makedirs(date_folder_path, exist_ok=True)
+        
+        timestamp = current_date.strftime("%Y%m%d_%H%M%S")
+        output_file_0 = os.path.join(date_folder_path, f"{device_name}_stream1_{timestamp}.mp4")
+        output_file_1 = os.path.join(date_folder_path, f"{device_name}_stream2_{timestamp}.mp4")
 
         buffer_files_0 = sorted([os.path.join(self.buffer_dir_video0, f) for f in os.listdir(self.buffer_dir_video0) if f.startswith("buffer_video0_")],
                                  key=os.path.getmtime)[-6:]
@@ -85,9 +111,30 @@ class FFMpegManager:
             print("Erro: Nenhum arquivo encontrado no buffer para /dev/video2.")
 
         
-        # cleanup()
+        
      
         
+    def _save_video_to_db(self, video_path):
+        """Salva informações do vídeo no banco de dados."""
+        try:
+            db = next(get_db())
+            video_name = os.path.basename(video_path)
+            relative_path = os.path.relpath(video_path, start=self.stream_dir)
+            
+            video = Video(
+                name=video_name,
+                path=relative_path,  # Salva o caminho relativo do arquivo
+                date=datetime.now(),
+                status=VideoStatus.PENDING
+            )
+            db.add(video)
+            db.commit()
+            print(f"Informações do vídeo {video_name} salvas no banco de dados. Path: {relative_path}")
+        except Exception as e:
+            print(f"Erro ao salvar informações do vídeo no banco de dados: {e}")
+            if 'db' in locals():
+                db.rollback()
+
     def _combine_segments(self, segment_files, output_file):
         """Combina múltiplos arquivos de segmento em um único arquivo."""
         temp_file = f"{output_file}_list.txt"
@@ -99,6 +146,9 @@ class FFMpegManager:
             "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", temp_file, "-c:v", "copy", "-movflags", "+faststart", output_file
         ])
         os.remove(temp_file)
+        
+        # Salva informações do vídeo no banco de dados com o caminho completo
+        self._save_video_to_db(output_file)
     
     
     def clear_buffers(self):

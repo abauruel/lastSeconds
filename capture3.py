@@ -5,7 +5,9 @@ from ffmpeg_manager import FFMpegManager
 from gpio_button import register_button_callback
 from routes import create_app
 from temperature_monitor import start_temperature_monitoring, stop_temperature_monitoring
-from led_ws281x_new import blink_n_times, cleanup, start_blinking
+# from led_ws281x_new import blink_n_times, cleanup, start_blinking
+
+import led_ws281x_new
 
 # Configurações
 BASE_DIR = "./recordings"
@@ -28,6 +30,9 @@ GPIO = setup_gpio()
 # Inicializa o gerenciador de ffmpeg
 ffmpeg_manager = FFMpegManager(BUFFER_DIR_VIDEO0, BUFFER_DIR_VIDEO2, FINAL_DIR, STREAM_DIR)
 ffmpeg_manager.start_ffmpeg_processes()
+
+led_ws281x_new.cleanup()
+
 
 
 
