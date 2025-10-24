@@ -86,7 +86,7 @@ def stop_blinking():
         _set_all_leds(0, 0, 0)
         print("LED parou de piscar")
 
-def blink_n_times(color=(0, 255, 0), n=4, interval=0.2):
+def blink_n_times1(color=(0, 255, 0), n=4, interval=0.2):
     """Pisca n vezes em uma cor específica, não usa thread"""
     stop_blinking()  # Para qualquer piscar em andamento
     
@@ -99,6 +99,51 @@ def blink_n_times(color=(0, 255, 0), n=4, interval=0.2):
         time.sleep(interval)
         _set_all_leds(0, 0, 0)
         time.sleep(interval)
+
+
+def blink_n_times(color=(0, 255, 0), n=4, interval=0.2, direction="all"):
+    """
+    Pisca n vezes em uma cor específica com efeito direcional.
+    
+    Parâmetros:
+      color: tupla (R, G, B)
+      n: quantidade de piscadas
+      interval: tempo entre piscadas
+      direction: "left", "right" ou "all"
+    """
+    stop_blinking()  # Para qualquer piscada anterior
+
+    strip = _initialize_strip()
+    r, g, b = color
+    num_leds = strip.numPixels()
+
+    print(f"LED piscando {n} vezes na cor ({r}, {g}, {b}) direção: {direction}")
+
+    for _ in range(n):
+        if direction == "left":
+            indices = range(0, num_leds // 2)
+        elif direction == "right":
+            indices = range(num_leds - 1, num_leds // 2 - 1, -1)
+        else:
+            indices = range(num_leds)
+
+        # Acende progressivamente
+        for i in indices:
+            strip.setPixelColor(i, Color(r, g, b))
+            strip.show()
+            time.sleep(interval / num_leds)  # velocidade do efeito
+
+        # Apaga progressivamente (na mesma direção)
+        for i in indices:
+            strip.setPixelColor(i, Color(0, 0, 0))
+            strip.show()
+            time.sleep(interval / num_leds)
+
+        # Intervalo entre piscadas completas
+        time.sleep(interval)
+
+        cleanup()
+
 
 def blink_sequence(color_sequence, n_times=4, interval=0.2, then_restart_red=True):
     """
@@ -134,20 +179,20 @@ def cleanup():
 # Para teste independente
 if __name__ == "__main__":
     try:
-        print("Testando piscar vermelho por 3 segundos...")
-        start_blinking(color=(255, 0, 0), interval=0.5)
+        # print("Testando piscar vermelho por 3 segundos...")
+        # start_blinking(color=(255, 0, 0), interval=0.5)
         # time.sleep(3)
         
-        print("Testando piscar verde 4 vezes...")
-        blink_n_times(color=(0, 255, 0), n=4, interval=0.2)
+        # print("Testando piscar verde 4 vezes...")
+        blink_n_times(color=(0, 255, 0), n=3, interval=0.2)
         
-        print("Voltando a piscar vermelho por 3 segundos...")
-        start_blinking(color=(255, 0, 0), interval=0.5)
-        time.sleep(3)
+        # print("Voltando a piscar vermelho por 3 segundos...")
+        # start_blinking(color=(255, 0, 0), interval=0.5)
+        # time.sleep(3)
         
-        print("Testando sequência verde depois vermelho...")
-        blink_green_then_red(n=4, interval=0.2)
-        time.sleep(5)  # Tempo para observar o efeito completo
+        # print("Testando sequência verde depois vermelho...")
+        # blink_green_then_red(n=4, interval=0.2)
+        # time.sleep(5)  # Tempo para observar o efeito completo
         
         print("Teste finalizado")
         cleanup()
