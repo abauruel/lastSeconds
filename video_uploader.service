@@ -1,0 +1,15 @@
+[Unit]
+Description=Video Upload Service
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/app
+Environment=PYTHONPATH=/home/pi/app
+ExecStart=/usr/bin/python3 /home/pi/app/video_uploader.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
