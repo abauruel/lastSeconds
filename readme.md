@@ -141,6 +141,50 @@ recordings/
 
 ---
 
+### **6. Update Video Status**
+- **Endpoint**: `/update_status`
+- **Method**: `PUT`
+- **Description**: Updates the status of a video in the database.
+- **Request Body**:
+  ```json
+  {
+    "name": "video_name.mp4",
+    "status": "sent"
+  }
+  ```
+- **Valid Status Values**: `pending`, `sent`, `deleted`
+- **Response**:
+  ```json
+  {
+    "status": "success",
+    "message": "Status do vídeo video_name.mp4 atualizado para sent"
+  }
+  ```
+- **Error Responses**:
+  - Missing name or status:
+    ```json
+    {
+      "status": "error",
+      "message": "Nome do vídeo é obrigatório"
+    }
+    ```
+  - Invalid status:
+    ```json
+    {
+      "status": "error",
+      "message": "Status inválido. Use: pending, sent, deleted"
+    }
+    ```
+  - Video not found:
+    ```json
+    {
+      "status": "error",
+      "message": "Vídeo não encontrado"
+    }
+    ```
+
+---
+
 ## **Functions**
 
 ### **1. `start_ffmpeg_processes()`**
@@ -195,6 +239,13 @@ curl -X POST http://localhost:5000/clear_buffers
 ### **Check Server Status**
 ```bash
 curl -X GET http://localhost:5000/status
+```
+
+### **Update Video Status**
+```bash
+curl -X PUT http://localhost:5000/update_status \
+  -H "Content-Type: application/json" \
+  -d '{"name": "video_name.mp4", "status": "sent"}'
 ```
 
 ---

@@ -3,10 +3,23 @@ import time
 import requests
 from datetime import datetime
 import schedule
+import socket
 from database import get_db, Video, VideoStatus
 
 API_BASE_URL = os.getenv("API_BASE_URL", "http://registroesportivo.com.br/api")
 API_TOKEN = os.getenv("API_TOKEN", "secret123")
+
+def check_internet_connection():
+    """
+    Verifica se há conexão com a internet tentando conectar com o Google DNS.
+    Retorna True se houver conexão, False caso contrário.
+    """
+    try:
+        # Tenta conectar com o Google DNS (8.8.8.8)
+        socket.create_connection(("8.8.8.8", 53), timeout=3)
+        return True
+    except OSError:
+        return False
 
 HEADERS = {
     "x-api-token": API_TOKEN,
@@ -56,62 +69,67 @@ class VideoUploader:
             filename = video.name
             
             if not os.path.exists(full_path):
-                print(f"Arquivo não encontrado: {full_path}")
+                print(f"[video_upload] Arquivo não encontrado: {full_path}")
                 return False
 
             # Verifica se o arquivo já existe no servidor
             if self.check_file_exists(filename):
-                print(f"Arquivo {filename} já existe no servidor. Marcando como enviado.")
+                print(f"[video_upload] Arquivo {filename} já existe no servidor. Marcando como enviado.")
                 video.status = VideoStatus.SENT
                 db.commit()
                 return True
 
             # Upload do vídeo
-            print(f"Gerando URL para upload de {filename}...")
+            print(f"[video_upload] Gerando URL para upload de {filename}...")
             presigned_url = self.generate_upload_url(filename)
             
-            print(f"Fazendo upload do vídeo {filename}...")
+            print(f"[video_upload] Fazendo upload do vídeo {filename}...")
             self.upload_file(full_path, presigned_url)
             
             # Upload da thumbnail se existir
             thumbnail_filename = None
             if os.path.exists(thumb_path):
                 thumbnail_filename = f"{filename}.jpeg"
-                print(f"Fazendo upload da thumbnail {thumbnail_filename}...")
+                print(f"[video_upload] Fazendo upload da thumbnail {thumbnail_filename}...")
                 thumb_presigned_url = self.generate_upload_url(thumbnail_filename)
                 self.upload_file(thumb_path, thumb_presigned_url)
 
             # Registra o vídeo no servidor
-            print(f"Registrando vídeo {filename} no servidor...")
+            print(f"[video_upload] Registrando vídeo {filename} no servidor...")
             self.register_video(filename, thumbnail_filename)
 
             # Atualiza o status no banco de dados
             video.status = VideoStatus.SENT
             db.commit()
-            print(f"Vídeo {filename} processado com sucesso!")
+            print(f"[video_upload] Vídeo {filename} processado com sucesso!")
             return True
 
         except requests.HTTPError as e:
-            print(f"Erro HTTP ao processar o vídeo {filename}: {str(e)}")
+            print(f"[video_upload] Erro HTTP ao processar o vídeo {filename}: {str(e)}")
             return False
         except Exception as e:
-            print(f"Erro ao processar o vídeo {filename}: {str(e)}")
+            print(f"[video_upload] Erro ao processar o vídeo {filename}: {str(e)}")
             return False
 
     def upload_pending_videos(self):
         """Procura e processa vídeos pendentes."""
         try:
-            print(f"[{datetime.now()}] Verificando vídeos pendentes...")
+            print(f"[video_upload] [{datetime.now()}] Verificando conexão com a internet...")
+            if not check_internet_connection():
+                print("[video_upload] Sem conexão com a internet. Tentando novamente no próximo ciclo.")
+                return
+
+            print(f"[video_upload] [{datetime.now()}] Verificando vídeos pendentes...")
             db = next(get_db())
             
             # Busca todos os vídeos com status PENDING
             pending_videos = db.query(Video).filter(Video.status == VideoStatus.PENDING).all()
             
             if not pending_videos:
-                print("Nenhum vídeo pendente encontrado.")
+                print("[video_upload] Nenhum vídeo pendente encontrado.")
                 return
 
-            print(f"Encontrados {len(pending_videos)} vídeos pendentes.")
+            print(f"[video_upload] Encontrados {len(pending_videos)} vídeos pendentes.")
             
             for video in pending_videos:
                 try:
@@ -133,9 +151,9 @@ def start_uploader(stream_dir):
     # Agenda a execução a cada 15 minutos
     schedule.every(15).minutes.do(uploader.upload_pending_videos)
     
-    print("Iniciando serviço de upload de vídeos...")
-    print(f"API Base URL: {API_BASE_URL}")
-    print("Executando a cada 15 minutos")
+    print("[video_upload] Iniciando serviço de upload de vídeos...")
+    print(f"[video_upload] API Base URL: {API_BASE_URL}")
+    print("[video_upload] Executando a cada 15 minutos")
     
     # Executa uma vez imediatamente ao iniciar
     uploader.upload_pending_videos()
