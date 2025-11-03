@@ -22,27 +22,27 @@ class FFMpegManager:
  
         """Inicia os processos ffmpeg com buffer circular."""
         self.ffmpeg_process_0 = subprocess.Popen([
-            "ffmpeg", "-loglevel", "info", "-fflags", "+genpts", "-f", "v4l2", "-input_format", "h264", "-video_size", "1280x720", "-r", "30", "-i", "/dev/video0",
+            "ffmpeg", "-loglevel", "info", "-fflags", "+genpts", "-f", "v4l2", "-input_format", "h264", "-video_size", "1280x720", "-r", "25", "-i", "/dev/video0",
 
             "-use_wallclock_as_timestamps", "1", "-fps_mode", "vfr",
-            "-c:v", "copy", "-crf","18","-f", "segment", "-segment_time", "1", "-segment_format", "mp4",
+            "-c:v", "copy", "-crf","18","-f", "segment", "-segment_time", "5", "-segment_format", "mp4",
             "-reset_timestamps", "1",
             "-segment_wrap", "100",
             f"{self.buffer_dir_video0}/buffer_video0_%03d.mp4",
 
             "-c:v", "copy", "-preset", "ultrafast", "-tune", "zerolatency", 
             # "-b:v", "4M", "-maxrate", "4M", "-bufsize", "4M", "-an", 
-            "-f", "flv", "rtmp://localhost/live/stream1"
+            "-f", "flv", "rtmp://localhost/live/stream1",
 
-            # "-c:v", "copy", "-f", "segment", "-segment_time","5","-segment_format","mp4", 
-            # "-reset_timestamps", "1", "-strftime", "1", "-ignore_io_errors", "1", 
-            # "/media/pi/EC-N-64GB/bts/stream1/video0_%Y%m%d_%H%M%S_%03d.mp4"
+           "-c:v", "copy", "-crf", "23", "-f", "segment", "-segment_time","5","-segment_format","mp4", 
+            "-reset_timestamps", "1", "-strftime", "1", "-ignore_io_errors", "1", "-segment_wrap","51840",
+            "/media/pi/EC-N-64GB/bts/stream1/video0_%Y%m%d_%H%M%S_%03d.mp4",
             
             
         ], preexec_fn=os.setsid)
 
         self.ffmpeg_process_1 = subprocess.Popen([
-            "ffmpeg",  "-loglevel", "info", "-fflags", "+genpts", "-f", "v4l2", "-input_format", "h264", "-video_size", "1280x720", "-r", "30", "-i", "/dev/video2",
+            "ffmpeg",  "-loglevel", "info", "-fflags", "+genpts", "-f", "v4l2", "-input_format", "h264", "-video_size", "1280x720", "-r", "25", "-i", "/dev/video2",
             "-use_wallclock_as_timestamps", "1", "-fps_mode", "vfr",
             "-c:v", "copy", "-preset", "ultrafast", "-tune", "zerolatency", 
             # "-b:v", "4M", "-maxrate", "4M", "-bufsize", "4M", "-an", 
@@ -50,11 +50,11 @@ class FFMpegManager:
             "-c:v", "copy",  "-crf", "18","-f", "segment", "-segment_time", "1", "-segment_format", "mp4",
             "-reset_timestamps", "1", 
             "-segment_wrap", "100",
-            f"{self.buffer_dir_video2}/buffer_video2_%03d.mp4"
+            f"{self.buffer_dir_video2}/buffer_video2_%03d.mp4",
 
-            # "-c:v", "copy", "-f", "segment", "-segment_time","5","-segment_format","mp4", 
-            # "-reset_timestamps", "1", "-strftime", "1", "-ignore_io_errors", "1", 
-            # "/media/pi/EC-N-64GB/bts/stream2/video2_%Y%m%d_%H%M%S_%03d.mp4",
+            "-c:v", "copy", "-crf", "23", "-f", "segment", "-segment_time","1","-segment_format","mp4", 
+            "-reset_timestamps", "1", "-strftime", "1", "-ignore_io_errors", "1", "-segment_wrap","51840",
+            "/media/pi/EC-N-64GB/bts/stream2/video2_%Y%m%d_%H%M%S_%03d.mp4",
         ], preexec_fn=os.setsid)
 
         print("Processos ffmpeg iniciados com buffer circular.")
