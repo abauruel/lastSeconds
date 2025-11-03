@@ -52,7 +52,7 @@ class FFMpegManager:
             "-segment_wrap", "100",
             f"{self.buffer_dir_video2}/buffer_video2_%03d.mp4",
 
-            "-c:v", "copy", "-crf", "23", "-f", "segment", "-segment_time","1","-segment_format","mp4", 
+            "-c:v", "copy", "-crf", "23", "-f", "segment", "-segment_time","5","-segment_format","mp4", 
             "-reset_timestamps", "1", "-strftime", "1", "-ignore_io_errors", "1", "-segment_wrap","51840",
             "/media/pi/EC-N-64GB/bts/stream2/video2_%Y%m%d_%H%M%S_%03d.mp4",
         ], preexec_fn=os.setsid)
