@@ -17,45 +17,55 @@ class FFMpegManager:
         self.ffmpeg_process_0 = None
         self.ffmpeg_process_1 = None
 
-    def start_ffmpeg_processes(self):
+    def start_ffmpeg_processes(self, device_number=0):
+        if device_number == 0:
+            DEVICE="/dev/video0"
+            PREFIX="video0"
+            BUFFER_DIR = f"{self.buffer_dir_video0}"
+            DISK_DIR = "/media/pi/EC-N-64GB/bts/stream1"
+        else:
+            DEVICE="/dev/video2"
+            PREFIX="video2"
+            BUFFER_DIR = f"{self.buffer_dir_video2}"
+            DISK_DIR = "/media/pi/EC-N-64GB/bts/stream2"
+            
+        STREAM_NAME = DISK_DIR.split('/')[-1]
+        print(f"stream name: {STREAM_NAME}")
         
- 
         """Inicia os processos ffmpeg com buffer circular."""
         self.ffmpeg_process_0 = subprocess.Popen([
-            "ffmpeg", "-loglevel", "info", "-fflags", "+genpts", "-f", "v4l2", "-input_format", "h264", "-video_size", "1280x720", "-r", "25", "-i", "/dev/video0",
-
+            "ffmpeg", "-loglevel", "info", "-fflags", "+genpts",
+            "-f", "v4l2", "-input_format", "h264", "-video_size", "1280x720", "-r", "25", "-i", f"{DEVICE}",
             "-use_wallclock_as_timestamps", "1", "-fps_mode", "vfr",
-            "-c:v", "copy", "-crf","18","-f", "segment", "-segment_time", "5", "-segment_format", "mp4",
-            "-reset_timestamps", "1",
-            "-segment_wrap", "100",
-            f"{self.buffer_dir_video0}/buffer_video0_%03d.mp4",
-
-            "-c:v", "copy", "-preset", "ultrafast", "-tune", "zerolatency", 
-            # "-b:v", "4M", "-maxrate", "4M", "-bufsize", "4M", "-an", 
-            "-f", "flv", "rtmp://localhost/live/stream1",
-
-           "-c:v", "copy", "-crf", "23", "-f", "segment", "-segment_time","5","-segment_format","mp4", 
-            "-reset_timestamps", "1", "-strftime", "1", "-ignore_io_errors", "1", "-segment_wrap","51840",
-            "/media/pi/EC-N-64GB/bts/stream1/video0_%Y%m%d_%H%M%S_%03d.mp4",
+            "-map", "0:v",
+            "-c:v", "copy", "-preset", "ultrafast", "-tune", "zerolatency",
+            "-ignore_io_errors", "1",
+            "-f", "tee",
+            (
+                f"[f=flv:onfail=ignore]"
+                f"rtmp://localhost/live/{STREAM_NAME}|"
+                f"[f=segment:segment_time=2:reset_timestamps=1:segment_format=mp4:segment_wrap=100]{BUFFER_DIR}/buffer_{PREFIX}_%03d.mp4|"
+                f"[f=segment:segment_time=5:reset_timestamps=1:segment_format=mp4:strftime=1:segment_wrap=51840]{DISK_DIR}/{PREFIX}_%Y%m%d_%H%M%S_%03d.mp4"
+            )
             
             
         ], preexec_fn=os.setsid)
 
-        self.ffmpeg_process_1 = subprocess.Popen([
-            "ffmpeg",  "-loglevel", "info", "-fflags", "+genpts", "-f", "v4l2", "-input_format", "h264", "-video_size", "1280x720", "-r", "25", "-i", "/dev/video2",
-            "-use_wallclock_as_timestamps", "1", "-fps_mode", "vfr",
-            "-c:v", "copy", "-preset", "ultrafast", "-tune", "zerolatency", 
-            # "-b:v", "4M", "-maxrate", "4M", "-bufsize", "4M", "-an", 
-            "-f", "flv", "rtmp://localhost/live/stream2",
-            "-c:v", "copy",  "-crf", "18","-f", "segment", "-segment_time", "1", "-segment_format", "mp4",
-            "-reset_timestamps", "1", 
-            "-segment_wrap", "100",
-            f"{self.buffer_dir_video2}/buffer_video2_%03d.mp4",
+        # self.ffmpeg_process_1 = subprocess.Popen([
+        #     "ffmpeg",  "-loglevel", "info", "-fflags", "+genpts", "-f", "v4l2", "-input_format", "h264", "-video_size", "1280x720", "-r", "25", "-i", "/dev/video2",
+        #     "-use_wallclock_as_timestamps", "1", "-fps_mode", "vfr",
+        #     "-c:v", "copy", "-preset", "ultrafast", "-tune", "zerolatency", 
+        #     # "-b:v", "4M", "-maxrate", "4M", "-bufsize", "4M", "-an", 
+        #     "-f", "flv", "rtmp://localhost/live/stream2",
+        #     "-c:v", "copy",  "-crf", "18","-f", "segment", "-segment_time", "2", "-segment_format", "mp4",
+        #     "-reset_timestamps", "1", 
+        #     "-segment_wrap", "100",
+        #     f"{self.buffer_dir_video2}/buffer_video2_%03d.mp4",
 
-            "-c:v", "copy", "-crf", "23", "-f", "segment", "-segment_time","5","-segment_format","mp4", 
-            "-reset_timestamps", "1", "-strftime", "1", "-ignore_io_errors", "1", "-segment_wrap","51840",
-            "/media/pi/EC-N-64GB/bts/stream2/video2_%Y%m%d_%H%M%S_%03d.mp4",
-        ], preexec_fn=os.setsid)
+        #     "-c:v", "copy", "-crf", "23", "-f", "segment", "-segment_time","5","-segment_format","mp4", 
+        #     "-reset_timestamps", "1", "-strftime", "1", "-ignore_io_errors", "1", "-segment_wrap","51840",
+        #     "/media/pi/EC-N-64GB/bts/stream2/video2_%Y%m%d_%H%M%S_%03d.mp4",
+        # ], preexec_fn=os.setsid)
 
         print("Processos ffmpeg iniciados com buffer circular.")
 
@@ -77,12 +87,12 @@ class FFMpegManager:
     def record_last_10_seconds(self, cam_id=0):
         """Copia os últimos 10 segundos de stream para um novo arquivo."""
         print("Gravando os últimos 10 segundos de stream...")
-        if cam_id == 0:
-            blink_n_times(color=(255, 0, 0), n=5, interval=0.2, direction="left")
-            cleanup()
-        if cam_id == 1:
-            blink_n_times(color=(0, 0, 255), n=5, interval=0.2, direction="right")
-            cleanup()
+        # if cam_id == 0:
+        #     blink_n_times(color=(255, 0, 0), n=5, interval=0.2, direction="left")
+        #     cleanup()
+        # if cam_id == 1:
+        #     blink_n_times(color=(0, 0, 255), n=5, interval=0.2, direction="right")
+        #     cleanup()
         current_date = datetime.now()
         date_folder = current_date.strftime("%Y%m%d")
         date_folder_path = os.path.join(self.stream_dir, date_folder)
@@ -95,10 +105,10 @@ class FFMpegManager:
         output_file_1 = os.path.join(date_folder_path, f"{device_name}_stream2_{timestamp}.mp4")
 
         buffer_files_0 = sorted([os.path.join(self.buffer_dir_video0, f) for f in os.listdir(self.buffer_dir_video0) if f.startswith("buffer_video0_")],
-                                 key=os.path.getmtime)[-6:]
+                                 key=os.path.getmtime)[-8:]
         
         buffer_files_1 = sorted([os.path.join(self.buffer_dir_video2, f) for f in os.listdir(self.buffer_dir_video2) if f.startswith("buffer_video2_")],
-                                key=os.path.getmtime)[-6:]
+                                key=os.path.getmtime)[-8:]
 
         if cam_id == 0 and buffer_files_0:
             self._combine_segments(buffer_files_0, output_file_0)
