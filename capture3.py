@@ -22,6 +22,10 @@ os.makedirs(BUFFER_DIR_VIDEO2, exist_ok=True)
 os.makedirs(FINAL_DIR, exist_ok=True)
 os.makedirs(STREAM_DIR, exist_ok=True)
 
+
+os.makedirs("/tmp/buffers/video0", exist_ok=True)
+os.makedirs("/tmp/buffers/video2", exist_ok=True)
+
 # Inicializa o Flask e o GPIO
 GPIO = setup_gpio()
 

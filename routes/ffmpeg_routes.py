@@ -84,4 +84,14 @@ def init_ffmpeg_routes(ffmpeg_manager):
         finally:
             db.close()
     
+
+    @ffmpeg_bp.route('/restart_service', methods=['POST'])
+    def restart_service():
+        service_name = "better_seconds_record.service"
+        try:
+            os.system(f"sudo systemctl restart {service_name}")
+            return jsonify({"status": "success", "message": f"Serviço {service_name} reiniciado."}), 200
+        except Exception as e:
+            return jsonify({"status": "error", "message": str(e)}), 500
+        
     return ffmpeg_bp

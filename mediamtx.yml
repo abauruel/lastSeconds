@@ -1,0 +1,31 @@
+rtsp: yes
+protocols: [udp, multicast, tcp]
+encryption: "no"
+rtspAddress: :8554
+rtspsAddress: :8322
+rtpAddress: :8000
+rtcpAddress: :8001
+multicastIPRange: 224.1.0.0/16
+multicastRTPPort: 8002
+multicastRTCPPort: 8003
+serverKey: server.key
+serverCert: server.crt
+authMethods: [basic]
+rtmp: yes
+paths:
+  live/stream1:
+    source: publisher
+  live/stream2:
+    source: publisher
+
+hls: yes
+hlsAddress: ":8888"
+hlsEncryption: no
+hlsServerKey: server.key
+hlsServerCert: server.crt
+hlsSegmentCount: 7
+hlsSegmentDuration: 2s
+hlsAllowOrigin: '*'
+hlsDirectory: '/tmp'
+writeQueueSize: 8192
+logDestinations: [stdout]

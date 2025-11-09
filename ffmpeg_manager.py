@@ -22,34 +22,47 @@ class FFMpegManager:
             DEVICE="/dev/video0"
             PREFIX="video0"
             BUFFER_DIR = f"{self.buffer_dir_video0}"
-            DISK_DIR = "/media/pi/EC-N-64GB/bts/stream1"
+            DISK_DIR = "/media/pi/usb64gb/bts/stream1"
         else:
             DEVICE="/dev/video2"
             PREFIX="video2"
             BUFFER_DIR = f"{self.buffer_dir_video2}"
-            DISK_DIR = "/media/pi/EC-N-64GB/bts/stream2"
+            DISK_DIR = "/media/pi/usb64gb/bts/stream2"
             
         STREAM_NAME = DISK_DIR.split('/')[-1]
         print(f"stream name: {STREAM_NAME}")
-        
-        """Inicia os processos ffmpeg com buffer circular."""
-        self.ffmpeg_process_0 = subprocess.Popen([
-            "ffmpeg", "-loglevel", "info", "-fflags", "+genpts",
+        cmd = [
+            "ffmpeg", "-rtbufsize","256M",
+	    "-hide_banner","-loglevel","error",
+	    "-fflags", "+genpts",
             "-f", "v4l2", "-input_format", "h264", "-video_size", "1280x720", "-r", "25", "-i", f"{DEVICE}",
             "-use_wallclock_as_timestamps", "1", "-fps_mode", "vfr",
             "-map", "0:v",
-            "-c:v", "copy", "-preset", "ultrafast", "-tune", "zerolatency",
+            "-c:v", "copy",          # usa aceleração de hardware
+            # "-b:v", "2M",                    # bitrate de saída (~2 Mbps)
+            # "-pix_fmt", "yuv420p",          # formato de pixel compatível
+            # "-preset", "ultrafast", "-tune", "zerolatency",
             "-ignore_io_errors", "1",
             "-f", "tee",
             (
                 f"[f=flv:onfail=ignore]"
                 f"rtmp://localhost/live/{STREAM_NAME}|"
-                f"[f=segment:segment_time=2:reset_timestamps=1:segment_format=mp4:segment_wrap=100]{BUFFER_DIR}/buffer_{PREFIX}_%03d.mp4|"
-                f"[f=segment:segment_time=5:reset_timestamps=1:segment_format=mp4:strftime=1:segment_wrap=51840]{DISK_DIR}/{PREFIX}_%Y%m%d_%H%M%S_%03d.mp4"
+                f"[f=segment:segment_time=2:reset_timestamps=1:avoid_negative_ts=make_zero:segment_format=mp4:segment_wrap=100]{BUFFER_DIR}/buffer_{PREFIX}_%03d.mp4"
+                # f"[f=segment:segment_time=30:reset_timestamps=1:avoid_negative_ts=make_zero:segment_format=mp4:strftime=1:segment_wrap=7200]{DISK_DIR}/{PREFIX}_%Y%m%d_%H%M%S_%03d.mp4"
             )
             
             
-        ], preexec_fn=os.setsid)
+        ]
+
+        """Inicia os processos ffmpeg com buffer circular."""
+        if device_number == 0:
+            print("Iniciando ffmpeg para /dev/video0...")
+            with open("/media/pi/usb64gb/bts/ffmpeg_device0.log", "a") as logfile:
+                self.ffmpeg_process_0 = subprocess.Popen(cmd, preexec_fn=os.setsid, stdout=logfile, stderr=logfile)
+        else:
+            print("Iniciando ffmpeg para /dev/video2...")
+            with open("/media/pi/usb64gb/bts/ffmpeg_device2.log", "a") as logfile:
+                self.ffmpeg_process_1 = subprocess.Popen(cmd, preexec_fn=os.setsid, stdout=logfile, stderr=logfile)
 
         # self.ffmpeg_process_1 = subprocess.Popen([
         #     "ffmpeg",  "-loglevel", "info", "-fflags", "+genpts", "-f", "v4l2", "-input_format", "h264", "-video_size", "1280x720", "-r", "25", "-i", "/dev/video2",
@@ -99,16 +112,17 @@ class FFMpegManager:
         
         # Create date folder if it doesn't exist
         os.makedirs(date_folder_path, exist_ok=True)
+        os.chown(date_folder_path, 1000, 1000)  # pi user typically has uid/gid 1000
         
         timestamp = current_date.strftime("%Y%m%d_%H%M%S")
         output_file_0 = os.path.join(date_folder_path, f"{device_name}_stream1_{timestamp}.mp4")
         output_file_1 = os.path.join(date_folder_path, f"{device_name}_stream2_{timestamp}.mp4")
 
         buffer_files_0 = sorted([os.path.join(self.buffer_dir_video0, f) for f in os.listdir(self.buffer_dir_video0) if f.startswith("buffer_video0_")],
-                                 key=os.path.getmtime)[-8:]
+                                 key=os.path.getmtime)[-6:]
         
         buffer_files_1 = sorted([os.path.join(self.buffer_dir_video2, f) for f in os.listdir(self.buffer_dir_video2) if f.startswith("buffer_video2_")],
-                                key=os.path.getmtime)[-8:]
+                                key=os.path.getmtime)[-6:]
 
         if cam_id == 0 and buffer_files_0:
             self._combine_segments(buffer_files_0, output_file_0)
