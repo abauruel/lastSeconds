@@ -241,10 +241,14 @@ class FFMpegManager:
             self.ffmpeg_process_0 = None
             self.ffmpeg_process_1 = None
 
-    def record_last_10_seconds(self, cam_id=0):
+    def record_last_10_seconds(self, cam_id=0, duration=10):
         """
         Registra apenas o timestamp do evento em um arquivo.
         Esta função é rápida e não bloqueia.
+        
+        Args:
+            cam_id: ID da câmera (0 ou 1)
+            duration: Duração do vídeo em segundos (padrão: 10)
         """
         try:
             current_time = datetime.now()
@@ -252,11 +256,12 @@ class FFMpegManager:
             timestamp_file = os.path.join(self.timestamp_dir, f"{date_str}.txt")
             
             
-            # Formato: timestamp_epoch|timestamp_iso|cam_id|status
+            # Formato: timestamp_epoch|timestamp_iso|cam_id|duration|status
             event_data = {
                 "timestamp_epoch": int(current_time.timestamp()),
                 "timestamp_iso": current_time.isoformat(),
                 "cam_id": cam_id,
+                "duration": duration,
                 "status": "pending"
             }
             
@@ -327,7 +332,17 @@ class FFMpegManager:
         except Exception as e:
             print(f"Erro ao atualizar status do evento: {e}")
 
-    def _extract_video_from_timestamp(self, timestamp_epoch, cam_id):
+    def _extract_video_from_timestamp(self, timestamp_epoch, cam_id, duration=10):
+        """Extrai vídeo com duração especificada baseado no timestamp.
+        
+        Args:
+            timestamp_epoch: Timestamp Unix do evento
+            cam_id: ID da câmera (0 ou 1)
+            duration: Duração do vídeo em segundos (padrão: 10)
+            
+        Returns:
+            str: Caminho do arquivo de vídeo extraído, ou None se falhar
+        """
         """
         Extrai um vídeo de 10 segundos baseado no timestamp fornecido.
         Busca nos arquivos de segmento de 5 minutos.
@@ -448,13 +463,14 @@ class FFMpegManager:
             # Calcula o offset dentro do arquivo
             # IMPORTANTE: Com reset_timestamps=1 no FFmpeg, cada arquivo inicia em 0
             # Então o offset é: (event_time - file_start_time)
-            # E queremos 5 segundos ANTES do evento até 5 segundos DEPOIS
+            # E queremos metade da duração ANTES do evento até metade DEPOIS
             offset_in_file = (event_time - file_start_time).total_seconds()
-            offset_seconds = max(0, offset_in_file - 5)  # 5 segundos antes do evento
+            seconds_before = duration / 2  # Metade antes do evento
+            offset_seconds = max(0, offset_in_file - seconds_before)
             
-            # Verifica se o evento está realmente dentro do arquivo (com margem de 10s para o clipe)
-            if offset_seconds > (SEGMENT_DURATION_SECONDS - 10):  # Deixa margem de 10s
-                print(f"ERRO: Offset {offset_seconds:.2f}s muito grande para arquivo de {SEGMENT_DURATION_SECONDS}s")
+            # Verifica se o evento está realmente dentro do arquivo (com margem para o clipe)
+            if offset_seconds > (SEGMENT_DURATION_SECONDS - duration):  # Deixa margem da duração
+                print(f"ERRO: Offset {offset_seconds:.2f}s muito grande para arquivo de {SEGMENT_DURATION_SECONDS}s (duração: {duration}s)")
                 return False
             
             print(f"DEBUG: Offset calculado: {offset_seconds:.2f}s no arquivo {os.path.basename(target_file)}")
@@ -470,13 +486,13 @@ class FFMpegManager:
             stream_name = "stream1" if cam_id == 0 else "stream2"
             output_file = os.path.join(date_folder_path, f"{device_name}_{stream_name}_{timestamp_str}.mp4")
             
-            # Extrai 10 segundos do vídeo usando ffmpeg
+            # Extrai vídeo com duração especificada usando ffmpeg
             # -ss APÓS -i para seeking preciso (evita duração 0)
             extract_cmd = [
                 "ffmpeg", "-y",
                 "-i", target_file,
                 "-ss", str(offset_seconds),
-                "-t", "10",  # 10 segundos
+                "-t", str(duration),  # Duração dinâmica
                 "-c:v", "copy",
                 "-avoid_negative_ts", "make_zero",
                 "-movflags", "+faststart",
@@ -551,9 +567,11 @@ class FFMpegManager:
                     try:
                         event = json.loads(line)
                         if event.get("status") == "pending":
+                            duration = event.get("duration", 10)  # Padrão 10s se não especificado
                             success = self._extract_video_from_timestamp(
                                 timestamp_epoch=event["timestamp_epoch"],
-                                cam_id=event["cam_id"]
+                                cam_id=event["cam_id"],
+                                duration=duration
                             )
                             
                             if success:
