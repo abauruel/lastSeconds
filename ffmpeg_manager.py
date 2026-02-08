@@ -310,8 +310,11 @@ class FFMpegManager:
                         for line in lines:
                             try:
                                 current_event = json.loads(line.strip())
+                                # Compara timestamp_epoch, cam_id, duration e timestamp_iso para garantir unicidade
                                 if (current_event["timestamp_epoch"] == event["timestamp_epoch"] and 
-                                    current_event["cam_id"] == event["cam_id"]):
+                                    current_event["cam_id"] == event["cam_id"] and
+                                    current_event.get("duration", 10) == event.get("duration", 10) and
+                                    current_event["timestamp_iso"] == event["timestamp_iso"]):
                                     current_event["status"] = new_status
                                     current_event["processed_at"] = datetime.now().isoformat()
                                     updated_lines.append(json.dumps(current_event) + "\n")
@@ -615,13 +618,15 @@ class FFMpegManager:
             print(f"Erro ao extrair vídeo do timestamp: {e}")
             return False
 
-    def manual_process_timestamps(self, date_str=None, days_back=3):
+    def manual_process_timestamps(self, date_str=None, days_back=3, max_events=5):
         """
         Processa manualmente os timestamps de um dia específico ou dos últimos N dias.
         Se date_str for None, processa os últimos 'days_back' dias.
+        Limita o processamento a max_events eventos por requisição para evitar timeout/OOM.
         """
         total_processed = 0
         total_failed = 0
+        total_skipped = 0
         dates_processed = []
         
         if date_str:
@@ -640,9 +645,10 @@ class FFMpegManager:
             if not os.path.exists(timestamp_file):
                 continue
             
-            print(f"Processando timestamps de {current_date}...")
+            print(f"Processando timestamps de {current_date} (máximo {max_events} eventos)...")
             processed = 0
             failed = 0
+            events_processed_count = 0
             
             # Lê todos os eventos do arquivo com file locking
             with self.timestamp_lock:
@@ -655,11 +661,17 @@ class FFMpegManager:
             
             # Processa os eventos fora do lock para não bloquear outras operações
             for line in lines:
+                # Limita eventos por requisição para evitar timeout/OOM
+                if events_processed_count >= max_events:
+                    total_skipped += 1
+                    continue
+                    
                 line = line.strip()
                 if line:
                     try:
                         event = json.loads(line)
                         if event.get("status") == "pending":
+                            events_processed_count += 1
                             duration = event.get("duration", 10)  # Padrão 10s se não especificado
                             success = self._extract_video_from_timestamp(
                                 timestamp_epoch=event["timestamp_epoch"],
@@ -694,13 +706,20 @@ class FFMpegManager:
                 "status": "error",
                 "message": "Nenhum timestamp pendente encontrado",
                 "processed": 0,
-                "failed": 0
+                "failed": 0,
+                "skipped": 0
             }
+        
+        message = f"Processamento concluído."
+        if total_skipped > 0:
+            message += f" {total_skipped} eventos pendentes foram ignorados (limite de {max_events} eventos por requisição)."
         
         return {
             "status": "success",
             "processed": total_processed,
             "failed": total_failed,
+            "skipped": total_skipped,
+            "message": message,
             "dates": dates_processed
         }
         
