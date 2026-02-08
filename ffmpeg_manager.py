@@ -7,6 +7,8 @@ import time
 from database import get_db, Video, VideoStatus
 import json
 import threading
+import re
+import fcntl
 
 device_name="rpi4bmobile"
 
@@ -18,25 +20,152 @@ class FFMpegManager:
         self.stream_dir = stream_dir
         self.ffmpeg_process_0 = None
         self.ffmpeg_process_1 = None
+        
+        # Cache dos dispositivos detectados
+        self.detected_cameras = {}
+        
+        # Lock para operações no arquivo de timestamps
+        self.timestamp_lock = threading.Lock()
 
         # Diretório para armazenar os arquivos de timestamp
         self.timestamp_dir = os.path.join(stream_dir, "timestamps")
         os.makedirs(self.timestamp_dir, exist_ok=True)
+    
+    def detect_usb_cameras(self):
+        """
+        Detecta automaticamente as câmeras USB disponíveis.
+        Retorna um dicionário com índice da câmera e path do dispositivo.
+        Filtra para pegar apenas um dispositivo por câmera física (por bus).
+        """
+        cameras = {}
+        
+        try:
+            # Lista todos os dispositivos de vídeo
+            video_devices = []
+            for i in range(32):
+                device_path = f"/dev/video{i}"
+                if os.path.exists(device_path):
+                    video_devices.append(device_path)
+            
+            if not video_devices:
+                print("ERRO: Nenhum dispositivo de vídeo encontrado!")
+                return cameras
+            
+            # Para cada dispositivo, verifica se é uma câmera USB principal
+            usb_cameras = []
+            seen_buses = set()
+            
+            for device_path in video_devices:
+                try:
+                    # Executa v4l2-ctl para obter informações do dispositivo
+                    result = subprocess.run(
+                        ['v4l2-ctl', '--device', device_path, '--all'],
+                        capture_output=True,
+                        text=True,
+                        timeout=2
+                    )
+                    
+                    output = result.stdout
+                    
+                    # Verifica se é uvcvideo (câmera USB)
+                    if 'uvcvideo' not in output:
+                        continue
+                    
+                    # Extrai informações
+                    bus_info = ""
+                    device_caps = []
+                    in_device_caps_section = False
+                    
+                    for line in output.split('\n'):
+                        if 'Bus info' in line:
+                            bus_info = line.split(':', 1)[1].strip()
+                        
+                        # Detecta início da seção Device Caps
+                        if 'Device Caps' in line:
+                            in_device_caps_section = True
+                            # Pega capabilities da mesma linha se houver
+                            if ':' in line:
+                                caps_part = line.split(':', 1)[1].strip()
+                                if caps_part and not caps_part.startswith('0x'):
+                                    device_caps.append(caps_part)
+                        # Linhas seguintes após Device Caps (indentadas)
+                        elif in_device_caps_section and line.startswith((' ', '\t')):
+                            device_caps.append(line.strip())
+                        # Fim da seção Device Caps
+                        elif in_device_caps_section and not line.startswith((' ', '\t', '')):
+                            in_device_caps_section = False
+                    
+                    device_caps_str = ' '.join(device_caps)
+                    
+                    # Só adiciona se tiver "Video Capture" nas Device Caps (não Metadata Capture)
+                    # Deve ter "Video Capture" mas não deve ser APENAS "Metadata Capture"
+                    has_video_capture = 'Video Capture' in device_caps_str
+                    is_metadata_only = 'Metadata Capture' in device_caps_str and device_caps_str.count('Capture') == 1
+                    
+                    if has_video_capture and not is_metadata_only:
+                        # Evita duplicatas: pega apenas o primeiro dispositivo de cada bus
+                        if bus_info not in seen_buses:
+                            seen_buses.add(bus_info)
+                            usb_cameras.append({
+                                'device': device_path,
+                                'bus_info': bus_info,
+                                'capabilities': device_caps_str
+                            })
+                            print(f"Câmera USB detectada: {device_path} (Bus: {bus_info})")
+                
+                except (subprocess.TimeoutExpired, subprocess.CalledProcessError, Exception) as e:
+                    # Ignora dispositivos que não respondem
+                    continue
+            
+            # Ordena por bus_info para manter ordem consistente
+            usb_cameras.sort(key=lambda x: x['bus_info'])
+            
+            # Atribui índices às câmeras
+            for idx, cam_info in enumerate(usb_cameras):
+                cameras[idx] = cam_info['device']
+                print(f"Câmera {idx}: {cam_info['device']} (Bus: {cam_info['bus_info']})")
+            
+            if not cameras:
+                print("AVISO: Nenhuma câmera USB válida encontrada!")
+            
+        except Exception as e:
+            print(f"ERRO ao detectar câmeras: {e}")
+        
+        return cameras
 
     def start_ffmpeg_processes(self, device_number=0, input_source="usb", stream=""):
+        # Se for USB, detecta as câmeras automaticamente
+        if input_source == "usb":
+            # Detecta câmeras apenas se ainda não foram detectadas ou se o cache está vazio
+            if not self.detected_cameras:
+                print(f"\nDetectando câmeras USB disponíveis...")
+                self.detected_cameras = self.detect_usb_cameras()
+            
+            # Verifica se a câmera solicitada foi detectada
+            if device_number not in self.detected_cameras:
+                print(f"ERRO: Câmera {device_number} não encontrada!")
+                print(f"Câmeras disponíveis: {list(self.detected_cameras.keys())}")
+                return
+            
+            DEVICE = self.detected_cameras[device_number]
+            print(f"Usando câmera {device_number}: {DEVICE}")
+        else:
+            # Para RTSP, usa o stream fornecido
+            DEVICE = stream
+        
+        # Configuração baseada no device_number
         if device_number == 0:
-            DEVICE= "/dev/video0" if input_source == "usb" else stream
             PREFIX="video0"
             BUFFER_DIR = f"{self.buffer_dir_video0}"
             DISK_DIR = "/media/pi/usb64gb/bts/stream1"
         else:
-            DEVICE="/dev/video2" if input_source == "usb" else stream
             PREFIX="video2"
             BUFFER_DIR = f"{self.buffer_dir_video2}"
             DISK_DIR = "/media/pi/usb64gb/bts/stream2"
             
         STREAM_NAME = DISK_DIR.split('/')[-1]
         print(f"stream name: {STREAM_NAME}")
+        print(f"Iniciando FFmpeg: device={DEVICE}, prefix={PREFIX}, dir={DISK_DIR}")
 
         cmd_usb = [
             "ffmpeg", "-rtbufsize","256M",
@@ -57,10 +186,8 @@ class FFMpegManager:
             (
                 f"[f=flv:onfail=ignore]"
                 f"rtmp://localhost/live/{STREAM_NAME}|"
-                # f"[f=segment:segment_time=300:reset_timestamps=1:avoid_negative_ts=make_zero:segment_format=mp4:segment_wrap=50]{BUFFER_DIR}/buffer_{PREFIX}_%03d.mp4"
-
-                f"[f=segment:segment_time=300:reset_timestamps=1:avoid_negative_ts=make_zero:segment_format=mp4:strftime=1:segment_wrap=60]{DISK_DIR}/{PREFIX}_%Y%m%d_%H%M%S.mp4"
-                #f"[f=segment:segment_time=5:reset_timestamps=1:avoid_negative_ts=make_zero:segment_format=mp4:strftime=1:segment_wrap=691200]{DISK_DIR}/{PREFIX}_%Y%m%d_%H%M%S_%03d.mp4"
+                # Segmentos de 1 minuto para testes rápidos
+                f"[f=segment:segment_time=60:reset_timestamps=1:avoid_negative_ts=make_zero:segment_format=mp4:strftime=1:segment_wrap=18000]{DISK_DIR}/{PREFIX}_%Y%m%d_%H%M%S.mp4"
             )
             
             
@@ -78,7 +205,7 @@ class FFMpegManager:
             "-f", "tee",
             (
                 # f"[f=segment:segment_time=2:reset_timestamps=1:avoid_negative_ts=make_zero:segment_format=mp4:segment_wrap=100]{BUFFER_DIR}/buffer_{PREFIX}_%03d.mp4|"
-                f"[f=segment:segment_time=300:reset_timestamps=1:avoid_negative_ts=make_zero:segment_format=mp4:strftime=1:segment_wrap=60]{DISK_DIR}/{PREFIX}_%Y%m%d_%H%M%S.mp4"
+                f"[f=segment:segment_time=60:reset_timestamps=1:avoid_negative_ts=make_zero:segment_format=mp4:strftime=1:segment_wrap=18000]{DISK_DIR}/{PREFIX}_%Y%m%d_%H%M%S.mp4"
             )
             
             
@@ -133,9 +260,15 @@ class FFMpegManager:
                 "status": "pending"
             }
             
-            # Append ao arquivo do dia
-            with open(timestamp_file, "a") as f:
-                f.write(json.dumps(event_data) + "\n")
+            # Append ao arquivo do dia com file locking
+            with self.timestamp_lock:
+                with open(timestamp_file, "a") as f:
+                    fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+                    try:
+                        f.write(json.dumps(event_data) + "\n")
+                        f.flush()
+                    finally:
+                        fcntl.flock(f.fileno(), fcntl.LOCK_UN)
             
             print(f"Evento registrado: cam_id={cam_id}, timestamp={current_time.isoformat()}")
             
@@ -160,29 +293,37 @@ class FFMpegManager:
     def _update_event_status(self, timestamp_file, event, new_status):
         """Atualiza o status de um evento no arquivo."""
         try:
-            # Lê todas as linhas
-            with open(timestamp_file, "r") as f:
-                lines = f.readlines()
-            
-            # Atualiza a linha correspondente
-            updated_lines = []
-            for line in lines:
-                try:
-                    current_event = json.loads(line.strip())
-                    if (current_event["timestamp_epoch"] == event["timestamp_epoch"] and 
-                        current_event["cam_id"] == event["cam_id"]):
-                        current_event["status"] = new_status
-                        current_event["processed_at"] = datetime.now().isoformat()
-                        updated_lines.append(json.dumps(current_event) + "\n")
-                    else:
-                        updated_lines.append(line)
-                except json.JSONDecodeError:
-                    updated_lines.append(line)
-            
-            # Reescreve o arquivo
-            with open(timestamp_file, "w") as f:
-                f.writelines(updated_lines)
-                
+            with self.timestamp_lock:
+                # Lê todas as linhas com file lock
+                with open(timestamp_file, "r+") as f:
+                    fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+                    try:
+                        lines = f.readlines()
+                        
+                        # Atualiza a linha correspondente
+                        updated_lines = []
+                        for line in lines:
+                            try:
+                                current_event = json.loads(line.strip())
+                                if (current_event["timestamp_epoch"] == event["timestamp_epoch"] and 
+                                    current_event["cam_id"] == event["cam_id"]):
+                                    current_event["status"] = new_status
+                                    current_event["processed_at"] = datetime.now().isoformat()
+                                    updated_lines.append(json.dumps(current_event) + "\n")
+                                else:
+                                    updated_lines.append(line)
+                            except (json.JSONDecodeError, KeyError):
+                                # Mantém linha inválida como está
+                                updated_lines.append(line)
+                        
+                        # Reescreve o arquivo
+                        f.seek(0)
+                        f.truncate()
+                        f.writelines(updated_lines)
+                        f.flush()
+                    finally:
+                        fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+                    
         except Exception as e:
             print(f"Erro ao atualizar status do evento: {e}")
 
@@ -204,9 +345,9 @@ class FFMpegManager:
             event_time = datetime.fromtimestamp(timestamp_epoch)
             
             # Busca o arquivo de segmento que contém o timestamp
-            # Como cada segmento tem 5 minutos, procura 6 horas antes e depois
+            # Segmentos de 1 minuto, busca 6 horas antes e 1 minuto depois
             search_start = event_time - timedelta(hours=6)
-            search_end = event_time + timedelta(minutes=5)
+            search_end = event_time + timedelta(minutes=1)
             
             # Lista todos os arquivos de segmento do disco
             segment_files = []
@@ -244,10 +385,12 @@ class FFMpegManager:
             # Encontra o arquivo que contém o timestamp do evento
             target_file = None
             file_start_time = None
+            SEGMENT_DURATION_SECONDS = 60  # FFmpeg configurado com segment_time=60 (1 minuto)
+            
             for filepath, file_time in segment_files:
-                # Cada arquivo tem 5 minutos (300 segundos)
-                file_end_time = file_time + timedelta(minutes=5)
-                print(f"DEBUG: Verificando arquivo {os.path.basename(filepath)}: {file_time} até {file_end_time}")
+                # Cada arquivo tem 60 segundos (1 minuto)
+                file_end_time = file_time + timedelta(seconds=SEGMENT_DURATION_SECONDS)
+                # print(f"DEBUG: Verificando arquivo {os.path.basename(filepath)}: {file_time} até {file_end_time}")
                 if file_time <= event_time <= file_end_time:
                     target_file = filepath
                     file_start_time = file_time
@@ -255,24 +398,51 @@ class FFMpegManager:
                     break
             
             if not target_file:
-                # Se não encontrar exato, pega o mais próximo
-                print(f"DEBUG: Nenhum arquivo exato, pegando o mais próximo")
-                closest = min(segment_files, key=lambda x: abs((x[1] - event_time).total_seconds()))
+                # Se não encontrar exato, pega o mais próximo que seja ANTERIOR ao evento
+                # (não podemos usar arquivo que ainda não existe)
+                valid_files = [(fp, ft) for fp, ft in segment_files if ft <= event_time]
+                if not valid_files:
+                    print(f"ERRO: Nenhum arquivo anterior ao evento {event_time} encontrado")
+                    return False
+                
+                print(f"DEBUG: Nenhum arquivo exato, pegando o mais próximo anterior")
+                closest = min(valid_files, key=lambda x: abs((x[1] - event_time).total_seconds()))
                 target_file = closest[0]
                 file_start_time = closest[1]
-                print(f"DEBUG: Arquivo mais próximo: {os.path.basename(target_file)}")
+                print(f"DEBUG: Arquivo mais próximo: {os.path.basename(target_file)}, início: {file_start_time}")
+                
+                # Verifica se o evento está muito longe do arquivo
+                time_diff = (event_time - file_start_time).total_seconds()
+                if time_diff > 600:  # Mais de 10 minutos de diferença
+                    print(f"ERRO: Evento muito distante do arquivo mais próximo ({time_diff:.0f}s)")
+                    return False
             
             # Verifica se o arquivo está completo (não está sendo escrito)
             file_size = os.path.getsize(target_file)
             file_age = time.time() - os.path.getmtime(target_file)
             
-            if file_size < 100000:  # Menos de 100KB, provavelmente ainda sendo escrito
+            print(f"INFO: Arquivo selecionado: {os.path.basename(target_file)}")
+            print(f"      Tamanho: {file_size} bytes, idade mtime: {file_age:.1f}s")
+            print(f"      Início do segmento: {file_start_time}")
+            print(f"      Idade desde início: {(time.time() - file_start_time.timestamp()):.0f}s")
+            
+            # Verifica se é o arquivo mais recente (provavelmente ainda sendo escrito)
+            # Com segment_time=60, aguarda pelo menos 65s após início do segmento
+            is_current_segment = (time.time() - file_start_time.timestamp()) < (SEGMENT_DURATION_SECONDS + 5)
+            
+            if is_current_segment:
+                print(f"AVISO: Arquivo {os.path.basename(target_file)} é o segmento atual (ainda sendo escrito pelo FFmpeg)")
+                print(f"       Idade do segmento: {(time.time() - file_start_time.timestamp()):.0f}s / {SEGMENT_DURATION_SECONDS}s")
+                print(f"       Aguarde até que o segmento seja finalizado (próximos {SEGMENT_DURATION_SECONDS - (time.time() - file_start_time.timestamp()):.0f}s)")
+                return False
+            
+            if file_size < 100000:  # Menos de 100KB, provavelmente corrompido
                 print(f"AVISO: Arquivo {os.path.basename(target_file)} muito pequeno ({file_size} bytes), pode estar incompleto")
                 return False
             
-            # Aguarda pelo menos 10 segundos após a última modificação para garantir que foi finalizado
-            if file_age < 10:
-                print(f"AVISO: Arquivo {os.path.basename(target_file)} muito recente ({file_age:.1f}s), ainda pode estar sendo escrito")
+            # Aguarda pelo menos 15 segundos após a última modificação para garantir que foi finalizado
+            if file_age < 15:
+                print(f"AVISO: Arquivo {os.path.basename(target_file)} muito recente ({file_age:.1f}s), aguardar mais tempo antes de processar")
                 return False
             
             # Calcula o offset dentro do arquivo
@@ -283,8 +453,8 @@ class FFMpegManager:
             offset_seconds = max(0, offset_in_file - 5)  # 5 segundos antes do evento
             
             # Verifica se o evento está realmente dentro do arquivo (com margem de 10s para o clipe)
-            if offset_seconds > 290:  # 300s - 10s de margem
-                print(f"ERRO: Offset {offset_seconds:.2f}s muito grande para arquivo de 5 minutos")
+            if offset_seconds > (SEGMENT_DURATION_SECONDS - 10):  # Deixa margem de 10s
+                print(f"ERRO: Offset {offset_seconds:.2f}s muito grande para arquivo de {SEGMENT_DURATION_SECONDS}s")
                 return False
             
             print(f"DEBUG: Offset calculado: {offset_seconds:.2f}s no arquivo {os.path.basename(target_file)}")
@@ -301,13 +471,14 @@ class FFMpegManager:
             output_file = os.path.join(date_folder_path, f"{device_name}_{stream_name}_{timestamp_str}.mp4")
             
             # Extrai 10 segundos do vídeo usando ffmpeg
-            # Abordagem simples: -ss antes de -i (rápido) com -c:v copy
+            # -ss APÓS -i para seeking preciso (evita duração 0)
             extract_cmd = [
                 "ffmpeg", "-y",
-                "-ss", str(offset_seconds),
                 "-i", target_file,
+                "-ss", str(offset_seconds),
                 "-t", "10",  # 10 segundos
                 "-c:v", "copy",
+                "-avoid_negative_ts", "make_zero",
                 "-movflags", "+faststart",
                 output_file
             ]
@@ -364,28 +535,42 @@ class FFMpegManager:
             processed = 0
             failed = 0
             
-            # Lê todos os eventos do arquivo
-            with open(timestamp_file, "r") as f:
-                for line in f:
-                    line = line.strip()
-                    if line:
-                        try:
-                            event = json.loads(line)
-                            if event.get("status") == "pending":
-                                success = self._extract_video_from_timestamp(
-                                    timestamp_epoch=event["timestamp_epoch"],
-                                    cam_id=event["cam_id"]
-                                )
-                                
-                                if success:
-                                    self._update_event_status(timestamp_file, event, "processed")
-                                    processed += 1
-                                else:
-                                    self._update_event_status(timestamp_file, event, "failed")
-                                    failed += 1
-                        except Exception as e:
-                            print(f"Erro ao processar linha: {e}")
-                            failed += 1
+            # Lê todos os eventos do arquivo com file locking
+            with self.timestamp_lock:
+                with open(timestamp_file, "r") as f:
+                    fcntl.flock(f.fileno(), fcntl.LOCK_SH)  # Shared lock para leitura
+                    try:
+                        lines = f.readlines()
+                    finally:
+                        fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+            
+            # Processa os eventos fora do lock para não bloquear outras operações
+            for line in lines:
+                line = line.strip()
+                if line:
+                    try:
+                        event = json.loads(line)
+                        if event.get("status") == "pending":
+                            success = self._extract_video_from_timestamp(
+                                timestamp_epoch=event["timestamp_epoch"],
+                                cam_id=event["cam_id"]
+                            )
+                            
+                            if success:
+                                self._update_event_status(timestamp_file, event, "processed")
+                                processed += 1
+                            else:
+                                self._update_event_status(timestamp_file, event, "failed")
+                                failed += 1
+                    except json.JSONDecodeError as e:
+                        print(f"Erro ao processar linha (JSON inválido): {line[:50]}... - {e}")
+                        failed += 1
+                    except KeyError as e:
+                        print(f"Erro ao processar linha (campo faltando): {line[:50]}... - {e}")
+                        failed += 1
+                    except Exception as e:
+                        print(f"Erro ao processar linha: {e}")
+                        failed += 1
             
             if processed > 0 or failed > 0:
                 dates_processed.append(current_date)

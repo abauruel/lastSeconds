@@ -32,8 +32,10 @@ GPIO = setup_gpio()
 
 # Inicializa o gerenciador de ffmpeg
 ffmpeg_manager = FFMpegManager(BUFFER_DIR_VIDEO0, BUFFER_DIR_VIDEO2, FINAL_DIR, STREAM_DIR)
-ffmpeg_manager.start_ffmpeg_processes(0)
-ffmpeg_manager.start_ffmpeg_processes(2)
+ffmpeg_manager.start_ffmpeg_processes(0, "usb")
+ffmpeg_manager.start_ffmpeg_processes(1, "usb")
+# ffmpeg_manager.start_ffmpeg_processes(0,"rtsp", "rtsp://admin:123456@192.168.1.188/stream0")
+# ffmpeg_manager.start_ffmpeg_processes(1,"rtsp", "rtsp://admin:123456@192.168.1.188/stream1")
 
 
 
