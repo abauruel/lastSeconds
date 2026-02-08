@@ -460,6 +460,21 @@ class FFMpegManager:
                 print(f"AVISO: Arquivo {os.path.basename(target_file)} muito recente ({file_age:.1f}s), aguardar mais tempo antes de processar")
                 return False
             
+            # Valida integridade do arquivo verificando se pode ser lido
+            try:
+                probe_cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", target_file]
+                probe_result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=15)
+                if probe_result.returncode != 0 or not probe_result.stdout.strip():
+                    print(f"ERRO: Arquivo {os.path.basename(target_file)} corrompido ou ilegível (ffprobe falhou)")
+                    return False
+                file_duration = float(probe_result.stdout.strip())
+                if file_duration < 10:  # Arquivo de 60s deveria ter pelo menos 10s de conteúdo válido
+                    print(f"AVISO: Arquivo {os.path.basename(target_file)} tem duração muito curta ({file_duration:.1f}s), pode estar corrompido")
+                    return False
+            except (subprocess.TimeoutExpired, ValueError, Exception) as e:
+                print(f"ERRO: Falha ao validar arquivo {os.path.basename(target_file)}: {e}")
+                return False
+            
             # Calcula o offset dentro do arquivo
             # IMPORTANTE: Com reset_timestamps=1 no FFmpeg, cada arquivo inicia em 0
             # Então o offset é: (event_time - file_start_time)
@@ -468,8 +483,34 @@ class FFMpegManager:
             seconds_before = duration / 2  # Metade antes do evento
             offset_seconds = max(0, offset_in_file - seconds_before)
             
+            # Verifica se há conteúdo suficiente no arquivo
+            available_content = SEGMENT_DURATION_SECONDS - offset_seconds
+            needs_concatenation = available_content < duration
+            next_file = None
+            
+            if needs_concatenation:
+                print(f"INFO: Evento próximo ao final. Disponível: {available_content:.1f}s, necessário: {duration}s")
+                print(f"      Buscando próximo segmento para concatenação...")
+                
+                # Busca o próximo arquivo de segmento
+                next_file_start = file_start_time + timedelta(seconds=SEGMENT_DURATION_SECONDS)
+                next_filename = next_file_start.strftime(f"{PREFIX}_%Y%m%d_%H%M%S.mp4")
+                next_file_path = os.path.join(DISK_DIR, next_filename)
+                
+                if os.path.exists(next_file_path):
+                    # Verifica se o próximo arquivo não é o segmento atual
+                    next_age = time.time() - os.path.getmtime(next_file_path)
+                    if next_age < 15:
+                        print(f"ERRO: Próximo arquivo muito recente ({next_age:.1f}s), aguardar mais tempo")
+                        return False
+                    next_file = next_file_path
+                    print(f"      Próximo segmento encontrado: {os.path.basename(next_file)}")
+                else:
+                    print(f"ERRO: Próximo segmento não encontrado: {next_filename}")
+                    return False
+            
             # Verifica se o evento está realmente dentro do arquivo (com margem para o clipe)
-            if offset_seconds > (SEGMENT_DURATION_SECONDS - duration):  # Deixa margem da duração
+            if not needs_concatenation and offset_seconds > (SEGMENT_DURATION_SECONDS - duration):
                 print(f"ERRO: Offset {offset_seconds:.2f}s muito grande para arquivo de {SEGMENT_DURATION_SECONDS}s (duração: {duration}s)")
                 return False
             
@@ -486,21 +527,73 @@ class FFMpegManager:
             stream_name = "stream1" if cam_id == 0 else "stream2"
             output_file = os.path.join(date_folder_path, f"{device_name}_{stream_name}_{timestamp_str}.mp4")
             
-            # Extrai vídeo com duração especificada usando ffmpeg
-            # -ss APÓS -i para seeking preciso (evita duração 0)
-            extract_cmd = [
-                "ffmpeg", "-y",
-                "-i", target_file,
-                "-ss", str(offset_seconds),
-                "-t", str(duration),  # Duração dinâmica
-                "-c:v", "copy",
-                "-avoid_negative_ts", "make_zero",
-                "-movflags", "+faststart",
-                output_file
-            ]
-            
-            print(f"Extraindo vídeo: arquivo={os.path.basename(target_file)}, offset={offset_seconds:.2f}s -> {os.path.basename(output_file)}")
-            result = subprocess.run(extract_cmd, capture_output=True, text=True)
+            # Extração com ou sem concatenação
+            if needs_concatenation and next_file:
+                print(f"Extraindo vídeo COM CONCATENAÇÃO: {os.path.basename(target_file)} + {os.path.basename(next_file)}")
+                
+                # Extrai de cada arquivo separadamente
+                temp_part1 = os.path.join("/tmp", f"part1_{timestamp_str}.mp4")
+                temp_part2 = os.path.join("/tmp", f"part2_{timestamp_str}.mp4")
+                concat_list = os.path.join("/tmp", f"concat_{timestamp_str}.txt")
+                
+                try:
+                    # Parte 1: do offset até o final do primeiro arquivo
+                    cmd_part1 = ["ffmpeg", "-y", "-i", target_file, "-ss", str(offset_seconds), "-c:v", "copy", temp_part1]
+                    result1 = subprocess.run(cmd_part1, capture_output=True, text=True, timeout=30)
+                    if result1.returncode != 0:
+                        print(f"ERRO ao extrair parte 1: {result1.stderr}")
+                        return False
+                    
+                    # Parte 2: do início do próximo arquivo até completar a duração
+                    remaining_duration = duration - available_content
+                    cmd_part2 = ["ffmpeg", "-y", "-i", next_file, "-t", str(remaining_duration), "-c:v", "copy", temp_part2]
+                    result2 = subprocess.run(cmd_part2, capture_output=True, text=True, timeout=30)
+                    if result2.returncode != 0:
+                        print(f"ERRO ao extrair parte 2: {result2.stderr}")
+                        return False
+                    
+                    # Cria lista para concatenação
+                    with open(concat_list, "w") as f:
+                        f.write(f"file '{temp_part1}'\n")
+                        f.write(f"file '{temp_part2}'\n")
+                    
+                    # Concatena as partes
+                    extract_cmd = [
+                        "ffmpeg", "-y",
+                        "-f", "concat",
+                        "-safe", "0",
+                        "-i", concat_list,
+                        "-c", "copy",
+                        "-avoid_negative_ts", "make_zero",
+                        "-movflags", "+faststart",
+                        output_file
+                    ]
+                    
+                    result = subprocess.run(extract_cmd, capture_output=True, text=True, timeout=30)
+                    
+                finally:
+                    # Remove arquivos temporários
+                    for temp_file in [temp_part1, temp_part2, concat_list]:
+                        try:
+                            if os.path.exists(temp_file):
+                                os.remove(temp_file)
+                        except:
+                            pass
+                    
+            else:
+                # Extração normal de um único arquivo
+                extract_cmd = [
+                    "ffmpeg", "-y",
+                    "-i", target_file,
+                    "-ss", str(offset_seconds),
+                    "-t", str(duration),
+                    "-c:v", "copy",
+                    "-avoid_negative_ts", "make_zero",
+                    "-movflags", "+faststart",
+                    output_file
+                ]
+                print(f"Extraindo vídeo: arquivo={os.path.basename(target_file)}, offset={offset_seconds:.2f}s -> {os.path.basename(output_file)}")
+                result = subprocess.run(extract_cmd, capture_output=True, text=True)
             
             if result.returncode != 0:
                 print(f"ERRO FFmpeg: {result.stderr}")
