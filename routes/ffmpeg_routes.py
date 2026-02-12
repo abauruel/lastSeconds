@@ -49,14 +49,13 @@ def init_ffmpeg_routes(ffmpeg_manager):
 
     @ffmpeg_bp.route('/process_timestamps', methods=['POST'])
     def handle_process_timestamps():
-        """Processa manualmente os timestamps de um ou vários dias"""
+        """Inicia processamento de timestamps em background (não bloqueia)"""
         try:
             data = request.get_json() or {}
             date_str = data.get('date')  # Formato: YYYYMMDD (opcional)
             days_back = data.get('days_back', 3)  # Quantos dias processar (padrão: 3)
-            max_events = data.get('max_events', 5)  # Máximo de eventos por requisição (padrão: 5)
             
-            result = ffmpeg_manager.manual_process_timestamps(date_str, days_back, max_events)
+            result = ffmpeg_manager.manual_process_timestamps(date_str, days_back)
             return jsonify(result), 200
         except Exception as e:
             print(f"Erro ao processar timestamps: {e}")
@@ -65,6 +64,24 @@ def init_ffmpeg_routes(ffmpeg_manager):
             return jsonify({
                 "status": "error",
                 "message": f"Erro interno ao processar timestamps: {str(e)}"
+            }), 500
+    
+    @ffmpeg_bp.route('/process_timestamps/status', methods=['GET'])
+    def handle_process_status():
+        """Verifica se há processamento em andamento"""
+        try:
+            with ffmpeg_manager.processing_lock:
+                is_processing = ffmpeg_manager.is_processing
+            
+            return jsonify({
+                "status": "success",
+                "is_processing": is_processing,
+                "message": "Processamento em andamento" if is_processing else "Nenhum processamento em andamento"
+            }), 200
+        except Exception as e:
+            return jsonify({
+                "status": "error",
+                "message": f"Erro ao verificar status: {str(e)}"
             }), 500
     
     @ffmpeg_bp.route('/stop', methods=['POST'])

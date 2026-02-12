@@ -24,12 +24,23 @@ class FFMpegManager:
         # Cache dos dispositivos detectados
         self.detected_cameras = {}
         
+        # Mapeia device_number para o device path usado
+        self.device_paths = {}  # {0: '/dev/video0', 1: '/dev/video2'}
+        
         # Lock para operações no arquivo de timestamps
         self.timestamp_lock = threading.Lock()
 
         # Diretório para armazenar os arquivos de timestamp
         self.timestamp_dir = os.path.join(stream_dir, "timestamps")
         os.makedirs(self.timestamp_dir, exist_ok=True)
+        
+        # Flag para indicar se há processamento em andamento
+        self.is_processing = False
+        self.processing_lock = threading.Lock()
+        
+        # Watchdog thread para monitorar saúde dos processos
+        self.watchdog_running = False
+        self.watchdog_thread = None
     
     def detect_usb_cameras(self):
         """
@@ -148,10 +159,12 @@ class FFMpegManager:
                 return
             
             DEVICE = self.detected_cameras[device_number]
+            self.device_paths[device_number] = DEVICE  # Armazena o device path
             print(f"Usando câmera {device_number}: {DEVICE}")
         else:
             # Para RTSP, usa o stream fornecido
             DEVICE = stream
+            self.device_paths[device_number] = DEVICE  # Armazena o stream path
         
         # Configuração baseada no device_number
         if device_number == 0:
@@ -225,21 +238,213 @@ class FFMpegManager:
 
 
         print("Processos ffmpeg iniciados com buffer circular.")
+        
+        # Inicia watchdog se ainda não estiver rodando
+        if not self.watchdog_running:
+            self.start_watchdog()
 
     def stop_ffmpeg_processes(self):
-        """Finaliza os processos ffmpeg."""
+        """Finaliza os processos ffmpeg e limpa processos zumbis."""
         try:
+            # Para o watchdog
+            self.watchdog_running = False
+            if self.watchdog_thread:
+                self.watchdog_thread.join(timeout=2)
+            
             if self.ffmpeg_process_0:
-                os.killpg(os.getpgid(self.ffmpeg_process_0.pid), signal.SIGTERM)
-                print("Processo ffmpeg_process_0 finalizado com sucesso.")
+                try:
+                    os.killpg(os.getpgid(self.ffmpeg_process_0.pid), signal.SIGTERM)
+                    self.ffmpeg_process_0.wait(timeout=5)  # Aguarda finalização
+                    print("Processo ffmpeg_process_0 finalizado com sucesso.")
+                except Exception as e:
+                    print(f"Erro ao finalizar ffmpeg_process_0: {e}")
+                    try:
+                        os.killpg(os.getpgid(self.ffmpeg_process_0.pid), signal.SIGKILL)
+                    except:
+                        pass
+                        
             if self.ffmpeg_process_1:
-                os.killpg(os.getpgid(self.ffmpeg_process_1.pid), signal.SIGTERM)
-                print("Processo ffmpeg_process_1 finalizado com sucesso.")
+                try:
+                    os.killpg(os.getpgid(self.ffmpeg_process_1.pid), signal.SIGTERM)
+                    self.ffmpeg_process_1.wait(timeout=5)  # Aguarda finalização
+                    print("Processo ffmpeg_process_1 finalizado com sucesso.")
+                except Exception as e:
+                    print(f"Erro ao finalizar ffmpeg_process_1: {e}")
+                    try:
+                        os.killpg(os.getpgid(self.ffmpeg_process_1.pid), signal.SIGKILL)
+                    except:
+                        pass
+            
+            # Limpa processos zumbis
+            self._cleanup_zombie_processes()
+            
         except Exception as e:
             print(f"Erro ao finalizar os processos do ffmpeg: {e}")
         finally:
             self.ffmpeg_process_0 = None
             self.ffmpeg_process_1 = None
+
+    def _cleanup_zombie_processes(self):
+        """Limpa processos zumbis (defunct) reapando os filhos mortos."""
+        try:
+            import signal
+            # Reapar todos os processos filhos mortos sem bloquear
+            while True:
+                try:
+                    pid, status = os.waitpid(-1, os.WNOHANG)
+                    if pid == 0:
+                        break  # Não há mais processos para reapar
+                    print(f"Processo zumbi {pid} limpo (exit status: {status})")
+                except ChildProcessError:
+                    break  # Não há mais filhos
+        except Exception as e:
+            print(f"Erro ao limpar processos zumbis: {e}")
+    
+    def check_process_health(self, device_number):
+        """Verifica se o processo FFmpeg está rodando e saudável.
+        
+        Returns:
+            bool: True se o processo está saudável, False caso contrário
+        """
+        process = self.ffmpeg_process_0 if device_number == 0 else self.ffmpeg_process_1
+        
+        if process is None:
+            return False
+        
+        # Verifica se o processo ainda está vivo
+        poll_result = process.poll()
+        if poll_result is not None:
+            print(f"⚠️ ALERTA: Processo FFmpeg device{device_number} morreu com código {poll_result}")
+            return False
+        
+        # Verifica se está gerando arquivos recentemente (últimos 5 minutos)
+        if device_number == 0:
+            disk_dir = "/media/pi/usb64gb/bts/stream1"
+            prefix = "video0"
+        else:
+            disk_dir = "/media/pi/usb64gb/bts/stream2"
+            prefix = "video2"
+        
+        try:
+            # Lista arquivos recentes
+            files = [f for f in os.listdir(disk_dir) if f.startswith(prefix) and f.endswith(".mp4")]
+            if files:
+                # Pega o arquivo mais recente
+                latest_file = max([os.path.join(disk_dir, f) for f in files], key=os.path.getmtime)
+                file_age = time.time() - os.path.getmtime(latest_file)
+                
+                # Se o arquivo mais recente tem mais de 5 minutos, algo está errado
+                if file_age > 300:  # 5 minutos
+                    print(f"⚠️ ALERTA: Último arquivo de device{device_number} tem {file_age:.0f}s (>5min)")
+                    return False
+            else:
+                print(f"⚠️ ALERTA: Nenhum arquivo encontrado para device{device_number}")
+                return False
+                
+        except Exception as e:
+            print(f"Erro ao verificar saúde de device{device_number}: {e}")
+            return False
+        
+        return True
+    
+    def restart_dead_process(self, device_number):
+        """Reinicia um processo FFmpeg morto.
+        
+        Args:
+            device_number: 0 ou 1
+        """
+        print(f"🔄 Reiniciando processo FFmpeg para device{device_number}...")
+        
+        try:
+            # Limpa processos zumbis primeiro
+            self._cleanup_zombie_processes()
+            
+            # Finaliza o processo antigo se ainda existir
+            process = self.ffmpeg_process_0 if device_number == 0 else self.ffmpeg_process_1
+            if process:
+                try:
+                    os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+                    process.wait(timeout=2)
+                except:
+                    pass
+            
+            # Reseta o processo
+            if device_number == 0:
+                self.ffmpeg_process_0 = None
+            else:
+                self.ffmpeg_process_1 = None
+            
+            # Aguarda um pouco para o dispositivo estar disponível
+            time.sleep(2)
+            
+            # Verifica se o dispositivo existe
+            device_path = self.device_paths.get(device_number)
+            if device_path and device_path.startswith("/dev/"):
+                if not os.path.exists(device_path):
+                    print(f"❌ ERRO: Dispositivo {device_path} não existe! Câmera desconectada?")
+                    # Tenta re-detectar as câmeras
+                    print("🔍 Tentando re-detectar câmeras...")
+                    self.detected_cameras = self.detect_usb_cameras()
+                    if device_number not in self.detected_cameras:
+                        print(f"❌ Câmera {device_number} não foi detectada após re-scan")
+                        return False
+            
+            # Reinicia o processo
+            input_source = "rtsp" if device_path and device_path.startswith("rtsp") else "usb"
+            self.start_ffmpeg_processes(device_number=device_number, input_source=input_source, stream=device_path or "")
+            
+            print(f"✅ Processo FFmpeg device{device_number} reiniciado com sucesso")
+            return True
+            
+        except Exception as e:
+            print(f"❌ ERRO ao reiniciar processo device{device_number}: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+    
+    def start_watchdog(self):
+        """Inicia thread de monitoramento dos processos FFmpeg."""
+        if self.watchdog_running:
+            return
+        
+        self.watchdog_running = True
+        self.watchdog_thread = threading.Thread(target=self._watchdog_loop, daemon=True)
+        self.watchdog_thread.start()
+        print("🐕 Watchdog de processos FFmpeg iniciado")
+    
+    def _watchdog_loop(self):
+        """Loop principal do watchdog que monitora os processos."""
+        check_interval = 60  # Verifica a cada 60 segundos
+        
+        while self.watchdog_running:
+            try:
+                # Verifica device 0
+                if self.ffmpeg_process_0 is not None:
+                    if not self.check_process_health(0):
+                        print("🚨 Device 0 não está saudável, tentando restart...")
+                        self.restart_dead_process(0)
+                
+                # Verifica device 1
+                if self.ffmpeg_process_1 is not None:
+                    if not self.check_process_health(1):
+                        print("🚨 Device 1 não está saudável, tentando restart...")
+                        self.restart_dead_process(1)
+                
+                # Limpa zumbis periodicamente
+                self._cleanup_zombie_processes()
+                
+            except Exception as e:
+                print(f"Erro no watchdog: {e}")
+                import traceback
+                traceback.print_exc()
+            
+            # Aguarda antes da próxima verificação
+            for _ in range(check_interval):
+                if not self.watchdog_running:
+                    break
+                time.sleep(1)
+        
+        print("🐕 Watchdog de processos FFmpeg finalizado")
 
     def record_last_10_seconds(self, cam_id=0, duration=10):
         """
@@ -618,110 +823,125 @@ class FFMpegManager:
             print(f"Erro ao extrair vídeo do timestamp: {e}")
             return False
 
-    def manual_process_timestamps(self, date_str=None, days_back=3, max_events=5):
+    def manual_process_timestamps(self, date_str=None, days_back=3, max_events=None):
         """
-        Processa manualmente os timestamps de um dia específico ou dos últimos N dias.
-        Se date_str for None, processa os últimos 'days_back' dias.
-        Limita o processamento a max_events eventos por requisição para evitar timeout/OOM.
+        Inicia o processamento de timestamps em background.
+        Retorna imediatamente sem bloquear a requisição HTTP.
+        Processa TODOS os eventos pending até o fim.
         """
-        total_processed = 0
-        total_failed = 0
-        total_skipped = 0
-        dates_processed = []
+        with self.processing_lock:
+            if self.is_processing:
+                return {
+                    "status": "already_processing",
+                    "message": "Já existe um processamento em andamento"
+                }
+            self.is_processing = True
         
-        if date_str:
-            # Processa apenas o dia específico
-            dates_to_process = [date_str]
-        else:
-            # Processa os últimos N dias
-            dates_to_process = []
-            for days_ago in range(days_back):
-                target_date = datetime.now() - timedelta(days=days_ago)
-                dates_to_process.append(target_date.strftime("%Y%m%d"))
-        
-        for current_date in dates_to_process:
-            timestamp_file = os.path.join(self.timestamp_dir, f"{current_date}.txt")
-            
-            if not os.path.exists(timestamp_file):
-                continue
-            
-            print(f"Processando timestamps de {current_date} (máximo {max_events} eventos)...")
-            processed = 0
-            failed = 0
-            events_processed_count = 0
-            
-            # Lê todos os eventos do arquivo com file locking
-            with self.timestamp_lock:
-                with open(timestamp_file, "r") as f:
-                    fcntl.flock(f.fileno(), fcntl.LOCK_SH)  # Shared lock para leitura
-                    try:
-                        lines = f.readlines()
-                    finally:
-                        fcntl.flock(f.fileno(), fcntl.LOCK_UN)
-            
-            # Processa os eventos fora do lock para não bloquear outras operações
-            for line in lines:
-                # Limita eventos por requisição para evitar timeout/OOM
-                if events_processed_count >= max_events:
-                    total_skipped += 1
-                    continue
-                    
-                line = line.strip()
-                if line:
-                    try:
-                        event = json.loads(line)
-                        if event.get("status") == "pending":
-                            events_processed_count += 1
-                            duration = event.get("duration", 10)  # Padrão 10s se não especificado
-                            success = self._extract_video_from_timestamp(
-                                timestamp_epoch=event["timestamp_epoch"],
-                                cam_id=event["cam_id"],
-                                duration=duration
-                            )
-                            
-                            if success:
-                                self._update_event_status(timestamp_file, event, "processed")
-                                processed += 1
-                            else:
-                                self._update_event_status(timestamp_file, event, "failed")
-                                failed += 1
-                    except json.JSONDecodeError as e:
-                        print(f"Erro ao processar linha (JSON inválido): {line[:50]}... - {e}")
-                        failed += 1
-                    except KeyError as e:
-                        print(f"Erro ao processar linha (campo faltando): {line[:50]}... - {e}")
-                        failed += 1
-                    except Exception as e:
-                        print(f"Erro ao processar linha: {e}")
-                        failed += 1
-            
-            if processed > 0 or failed > 0:
-                dates_processed.append(current_date)
-                total_processed += processed
-                total_failed += failed
-                print(f"Data {current_date}: {processed} processados, {failed} falharam")
-        
-        if not dates_processed:
-            return {
-                "status": "error",
-                "message": "Nenhum timestamp pendente encontrado",
-                "processed": 0,
-                "failed": 0,
-                "skipped": 0
-            }
-        
-        message = f"Processamento concluído."
-        if total_skipped > 0:
-            message += f" {total_skipped} eventos pendentes foram ignorados (limite de {max_events} eventos por requisição)."
+        # Inicia thread em background
+        thread = threading.Thread(
+            target=self._process_all_pending_background,
+            args=(date_str, days_back),
+            daemon=False  # Não é daemon para garantir que termine
+        )
+        thread.start()
         
         return {
-            "status": "success",
-            "processed": total_processed,
-            "failed": total_failed,
-            "skipped": total_skipped,
-            "message": message,
-            "dates": dates_processed
+            "status": "started",
+            "message": "Processamento iniciado em background. Todos os pending serão processados."
         }
+    
+    def _process_all_pending_background(self, date_str=None, days_back=3):
+        """
+        Método executado em background para processar TODOS os timestamps pending.
+        Processa um evento por vez até finalizar todos.
+        """
+        try:
+            print("[Background] Iniciando processamento de timestamps...")
+            total_processed = 0
+            total_failed = 0
+            dates_processed = []
+            
+            if date_str:
+                # Processa apenas o dia específico
+                dates_to_process = [date_str]
+            else:
+                # Processa os últimos N dias
+                dates_to_process = []
+                for days_ago in range(days_back):
+                    target_date = datetime.now() - timedelta(days=days_ago)
+                    dates_to_process.append(target_date.strftime("%Y%m%d"))
+            
+            for current_date in dates_to_process:
+                timestamp_file = os.path.join(self.timestamp_dir, f"{current_date}.txt")
+                
+                if not os.path.exists(timestamp_file):
+                    continue
+                
+                print(f"[Background] Processando timestamps de {current_date}...")
+                processed = 0
+                failed = 0
+                
+                # Lê todos os eventos do arquivo com file locking
+                with self.timestamp_lock:
+                    with open(timestamp_file, "r") as f:
+                        fcntl.flock(f.fileno(), fcntl.LOCK_SH)  # Shared lock para leitura
+                        try:
+                            lines = f.readlines()
+                        finally:
+                            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+                
+                # Processa TODOS os eventos pending (sem limite)
+                for line in lines:
+                    line = line.strip()
+                    if line:
+                        try:
+                            event = json.loads(line)
+                            if event.get("status") == "pending":
+                                duration = event.get("duration", 10)  # Padrão 10s se não especificado
+                                success = self._extract_video_from_timestamp(
+                                    timestamp_epoch=event["timestamp_epoch"],
+                                    cam_id=event["cam_id"],
+                                    duration=duration
+                                )
+                                
+                                if success:
+                                    self._update_event_status(timestamp_file, event, "processed")
+                                    processed += 1
+                                else:
+                                    self._update_event_status(timestamp_file, event, "failed")
+                                    failed += 1
+                                    
+                                # Log de progresso
+                                if (processed + failed) % 10 == 0:
+                                    print(f"[Background] Progresso: {processed} processados, {failed} falharam")
+                                    
+                        except json.JSONDecodeError as e:
+                            print(f"[Background] Erro ao processar linha (JSON inválido): {line[:50]}... - {e}")
+                            failed += 1
+                        except KeyError as e:
+                            print(f"[Background] Erro ao processar linha (campo faltando): {line[:50]}... - {e}")
+                            failed += 1
+                        except Exception as e:
+                            print(f"[Background] Erro ao processar linha: {e}")
+                            failed += 1
+                
+                if processed > 0 or failed > 0:
+                    dates_processed.append(current_date)
+                    total_processed += processed
+                    total_failed += failed
+                    print(f"[Background] Data {current_date}: {processed} processados, {failed} falharam")
+            
+            print(f"[Background] Processamento concluído. Total: {total_processed} processados, {total_failed} falharam")
+            
+        except Exception as e:
+            print(f"[Background] Erro durante processamento: {e}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            # Marca como não processando
+            with self.processing_lock:
+                self.is_processing = False
+            print("[Background] Flag de processamento liberada")
         
     def _save_video_to_db(self, video_path):
         """Salva informações do vídeo no banco de dados."""
