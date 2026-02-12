@@ -12,6 +12,8 @@ serverKey: server.key
 serverCert: server.crt
 authMethods: [basic]
 rtmp: yes
+rtmpAddress: :1935
+rtmpEncryption: "no"
 paths:
   live/stream1:
     source: publisher

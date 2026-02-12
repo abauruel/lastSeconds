@@ -17,10 +17,15 @@ paths:
     source: publisher
   live/stream2:
     source: publisher
-  
+
 hls: yes
+hlsAddress: ":8888"
+hlsEncryption: no
+hlsServerKey: server.key
+hlsServerCert: server.crt
 hlsSegmentCount: 7
 hlsSegmentDuration: 2s
 hlsAllowOrigin: '*'
 hlsDirectory: './'
 writeQueueSize: 8192
+logDestinations: [stdout]
