@@ -78,7 +78,7 @@ def init_status_routes():
             try:
                 if os.path.exists(stream1_dir):
                     files = [f for f in os.listdir(stream1_dir) 
-                            if f.startswith("video0") and f.endswith(".mp4")]
+                            if f.startswith("video0") and f.endswith(".ts")]
                     
                     if files:
                         latest_file = max([os.path.join(stream1_dir, f) for f in files], 
@@ -113,7 +113,7 @@ def init_status_routes():
             try:
                 if os.path.exists(stream2_dir):
                     files = [f for f in os.listdir(stream2_dir) 
-                            if f.startswith("video2") and f.endswith(".mp4")]
+                            if f.startswith("video2") and f.endswith(".ts")]
                     
                     if files:
                         latest_file = max([os.path.join(stream2_dir, f) for f in files], 

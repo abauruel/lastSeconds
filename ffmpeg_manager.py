@@ -44,103 +44,27 @@ class FFMpegManager:
     
     def detect_usb_cameras(self):
         """
-        Detecta automaticamente as câmeras USB disponíveis.
-        Retorna um dicionário com índice da câmera e path do dispositivo.
-        Filtra para pegar apenas um dispositivo por câmera física (por bus).
+        Retorna os dispositivos fixos de câmera USB.
+        Sempre usa /dev/video0 e /dev/video2 como dispositivos primários.
         """
         cameras = {}
         
-        try:
-            # Lista todos os dispositivos de vídeo
-            video_devices = []
-            for i in range(32):
-                device_path = f"/dev/video{i}"
-                if os.path.exists(device_path):
-                    video_devices.append(device_path)
-            
-            if not video_devices:
-                print("ERRO: Nenhum dispositivo de vídeo encontrado!")
-                return cameras
-            
-            # Para cada dispositivo, verifica se é uma câmera USB principal
-            usb_cameras = []
-            seen_buses = set()
-            
-            for device_path in video_devices:
-                try:
-                    # Executa v4l2-ctl para obter informações do dispositivo
-                    result = subprocess.run(
-                        ['v4l2-ctl', '--device', device_path, '--all'],
-                        capture_output=True,
-                        text=True,
-                        timeout=2
-                    )
-                    
-                    output = result.stdout
-                    
-                    # Verifica se é uvcvideo (câmera USB)
-                    if 'uvcvideo' not in output:
-                        continue
-                    
-                    # Extrai informações
-                    bus_info = ""
-                    device_caps = []
-                    in_device_caps_section = False
-                    
-                    for line in output.split('\n'):
-                        if 'Bus info' in line:
-                            bus_info = line.split(':', 1)[1].strip()
-                        
-                        # Detecta início da seção Device Caps
-                        if 'Device Caps' in line:
-                            in_device_caps_section = True
-                            # Pega capabilities da mesma linha se houver
-                            if ':' in line:
-                                caps_part = line.split(':', 1)[1].strip()
-                                if caps_part and not caps_part.startswith('0x'):
-                                    device_caps.append(caps_part)
-                        # Linhas seguintes após Device Caps (indentadas)
-                        elif in_device_caps_section and line.startswith((' ', '\t')):
-                            device_caps.append(line.strip())
-                        # Fim da seção Device Caps
-                        elif in_device_caps_section and not line.startswith((' ', '\t', '')):
-                            in_device_caps_section = False
-                    
-                    device_caps_str = ' '.join(device_caps)
-                    
-                    # Só adiciona se tiver "Video Capture" nas Device Caps (não Metadata Capture)
-                    # Deve ter "Video Capture" mas não deve ser APENAS "Metadata Capture"
-                    has_video_capture = 'Video Capture' in device_caps_str
-                    is_metadata_only = 'Metadata Capture' in device_caps_str and device_caps_str.count('Capture') == 1
-                    
-                    if has_video_capture and not is_metadata_only:
-                        # Evita duplicatas: pega apenas o primeiro dispositivo de cada bus
-                        if bus_info not in seen_buses:
-                            seen_buses.add(bus_info)
-                            usb_cameras.append({
-                                'device': device_path,
-                                'bus_info': bus_info,
-                                'capabilities': device_caps_str
-                            })
-                            print(f"Câmera USB detectada: {device_path} (Bus: {bus_info})")
-                
-                except (subprocess.TimeoutExpired, subprocess.CalledProcessError, Exception) as e:
-                    # Ignora dispositivos que não respondem
-                    continue
-            
-            # Ordena por bus_info para manter ordem consistente
-            usb_cameras.sort(key=lambda x: x['bus_info'])
-            
-            # Atribui índices às câmeras
-            for idx, cam_info in enumerate(usb_cameras):
-                cameras[idx] = cam_info['device']
-                print(f"Câmera {idx}: {cam_info['device']} (Bus: {cam_info['bus_info']})")
-            
-            if not cameras:
-                print("AVISO: Nenhuma câmera USB válida encontrada!")
-            
-        except Exception as e:
-            print(f"ERRO ao detectar câmeras: {e}")
+        # Configuração fixa dos dispositivos de vídeo
+        fixed_devices = {
+            0: '/dev/video0',  # stream1
+            1: '/dev/video2'   # stream2
+        }
+        
+        # Verifica se os dispositivos existem
+        for idx, device_path in fixed_devices.items():
+            if os.path.exists(device_path):
+                cameras[idx] = device_path
+                print(f"Câmera {idx}: {device_path}")
+            else:
+                print(f"AVISO: Dispositivo {device_path} não encontrado!")
+        
+        if not cameras:
+            print("ERRO: Nenhum dispositivo de vídeo encontrado!")
         
         return cameras
 
@@ -190,20 +114,15 @@ class FFMpegManager:
             "-use_wallclock_as_timestamps", "1", "-fps_mode", "vfr",
             "-force_key_frames", "expr:gte(t,n_forced*2)",  # Força keyframes a cada 2s
             "-map", "0:v",
-            "-c:v", "copy",          # usa aceleração de hardware
-            #  "-c:v", "h264_v4l2m2m","-pix_fmt", "yuv420p", "-b:v", "2M","-maxrate", "2.5M","-bufsize", "4M",
-	    #"-preset", "ultrafast", "-crf", "23",  # Re-encode para keyframes regulares
-            # "-g", "50", "-keyint_min", "50",  # Keyframe a cada 2s (50 frames @ 25fps)
+            "-c:v", "copy",
             "-ignore_io_errors", "1",
             "-f", "tee",
             (
                 f"[f=flv:onfail=ignore]"
                 f"rtmp://localhost/live/{STREAM_NAME}|"
-                # Segmentos de 1 minuto para testes rápidos
-                f"[f=segment:segment_time=60:reset_timestamps=1:avoid_negative_ts=make_zero:segment_format=mp4:strftime=1:segment_wrap=18000]{DISK_DIR}/{PREFIX}_%Y%m%d_%H%M%S.mp4"
+                f"[f=segment:segment_time=60:segment_atclocktime=1:segment_clocktime_offset=0:reset_timestamps=1:avoid_negative_ts=make_zero:segment_format=mpegts:strftime=1:segment_wrap=18000]"
+                f"{DISK_DIR}/{PREFIX}_%Y%m%d_%H%M%S.ts"
             )
-            
-            
         ]
         cmd_rtsp = [
             "ffmpeg", "-rtbufsize","256M",
@@ -213,15 +132,15 @@ class FFMpegManager:
             "-use_wallclock_as_timestamps", "1", "-fps_mode", "vfr",
             "-force_key_frames", "expr:gte(t,n_forced*2)",  # Força keyframes a cada 2s
             "-map", "0:v",
-            "-c:v", "copy",          # usa aceleração de hardware
+            "-c:v", "copy",
             "-ignore_io_errors", "1",
             "-f", "tee",
             (
-                # f"[f=segment:segment_time=2:reset_timestamps=1:avoid_negative_ts=make_zero:segment_format=mp4:segment_wrap=100]{BUFFER_DIR}/buffer_{PREFIX}_%03d.mp4|"
-                f"[f=segment:segment_time=60:reset_timestamps=1:avoid_negative_ts=make_zero:segment_format=mp4:strftime=1:segment_wrap=18000]{DISK_DIR}/{PREFIX}_%Y%m%d_%H%M%S.mp4"
+                f"[f=flv:onfail=ignore]"
+                f"rtmp://localhost/live/{STREAM_NAME}|"
+                f"[f=segment:segment_time=60:segment_atclocktime=1:segment_clocktime_offset=0:reset_timestamps=1:avoid_negative_ts=make_zero:segment_format=mp4:strftime=1:segment_wrap=18000]"
+                f"{DISK_DIR}/{PREFIX}_%Y%m%d_%H%M%S.mp4"
             )
-            
-            
         ]
 
         """Inicia os processos ffmpeg com buffer circular."""
@@ -244,42 +163,117 @@ class FFMpegManager:
             self.start_watchdog()
 
     def stop_ffmpeg_processes(self):
-        """Finaliza os processos ffmpeg e limpa processos zumbis."""
+        """Finaliza os processos ffmpeg e limpa processos zumbis de forma robusta."""
         try:
-            # Para o watchdog
+            print("🛑 Iniciando finalização de processos FFmpeg...")
+            
+            # Para o watchdog primeiro
             self.watchdog_running = False
             if self.watchdog_thread:
                 self.watchdog_thread.join(timeout=2)
             
+            # Lista para armazenar PIDs que precisamos garantir que morreram
+            pids_to_kill = []
+            
+            # Finaliza processo 0
             if self.ffmpeg_process_0:
                 try:
-                    os.killpg(os.getpgid(self.ffmpeg_process_0.pid), signal.SIGTERM)
-                    self.ffmpeg_process_0.wait(timeout=5)  # Aguarda finalização
-                    print("Processo ffmpeg_process_0 finalizado com sucesso.")
-                except Exception as e:
-                    print(f"Erro ao finalizar ffmpeg_process_0: {e}")
+                    pid = self.ffmpeg_process_0.pid
+                    pgid = os.getpgid(pid)
+                    pids_to_kill.append((pid, pgid))
+                    
+                    print(f"  → Finalizando processo 0 (PID {pid}, PGID {pgid})...")
+                    os.killpg(pgid, signal.SIGTERM)
+                    
+                    # Aguarda até 3 segundos por finalização graceful
                     try:
-                        os.killpg(os.getpgid(self.ffmpeg_process_0.pid), signal.SIGKILL)
-                    except:
-                        pass
+                        self.ffmpeg_process_0.wait(timeout=3)
+                        print(f"  ✓ Processo 0 finalizado gracefully")
+                    except subprocess.TimeoutExpired:
+                        print(f"  ⚠ Processo 0 não finalizou, forçando SIGKILL...")
+                        os.killpg(pgid, signal.SIGKILL)
+                        self.ffmpeg_process_0.wait(timeout=2)
+                        print(f"  ✓ Processo 0 finalizado forçadamente")
                         
+                except ProcessLookupError:
+                    print(f"  ℹ Processo 0 já estava morto")
+                except Exception as e:
+                    print(f"  ✗ Erro ao finalizar processo 0: {e}")
+                        
+            # Finaliza processo 1
             if self.ffmpeg_process_1:
                 try:
-                    os.killpg(os.getpgid(self.ffmpeg_process_1.pid), signal.SIGTERM)
-                    self.ffmpeg_process_1.wait(timeout=5)  # Aguarda finalização
-                    print("Processo ffmpeg_process_1 finalizado com sucesso.")
-                except Exception as e:
-                    print(f"Erro ao finalizar ffmpeg_process_1: {e}")
+                    pid = self.ffmpeg_process_1.pid
+                    pgid = os.getpgid(pid)
+                    pids_to_kill.append((pid, pgid))
+                    
+                    print(f"  → Finalizando processo 1 (PID {pid}, PGID {pgid})...")
+                    os.killpg(pgid, signal.SIGTERM)
+                    
+                    # Aguarda até 3 segundos por finalização graceful
                     try:
-                        os.killpg(os.getpgid(self.ffmpeg_process_1.pid), signal.SIGKILL)
-                    except:
-                        pass
+                        self.ffmpeg_process_1.wait(timeout=3)
+                        print(f"  ✓ Processo 1 finalizado gracefully")
+                    except subprocess.TimeoutExpired:
+                        print(f"  ⚠ Processo 1 não finalizou, forçando SIGKILL...")
+                        os.killpg(pgid, signal.SIGKILL)
+                        self.ffmpeg_process_1.wait(timeout=2)
+                        print(f"  ✓ Processo 1 finalizado forçadamente")
+                        
+                except ProcessLookupError:
+                    print(f"  ℹ Processo 1 já estava morto")
+                except Exception as e:
+                    print(f"  ✗ Erro ao finalizar processo 1: {e}")
+            
+            # Garante que todos os processos FFmpeg relacionados foram mortos
+            print("  → Limpando processos FFmpeg órfãos...")
+            try:
+                # Busca por processos ffmpeg que estejam usando os dispositivos de vídeo
+                result = subprocess.run(
+                    ["pgrep", "-f", "ffmpeg.*video"],
+                    capture_output=True,
+                    text=True,
+                    timeout=2
+                )
+                
+                if result.stdout.strip():
+                    orphan_pids = result.stdout.strip().split('\n')
+                    print(f"  ⚠ Encontrados {len(orphan_pids)} processos FFmpeg órfãos: {orphan_pids}")
+                    
+                    # Tenta SIGTERM primeiro
+                    subprocess.run(["pkill", "-15", "-f", "ffmpeg.*video"], timeout=2)
+                    time.sleep(1)
+                    
+                    # Verifica se ainda existem
+                    result = subprocess.run(
+                        ["pgrep", "-f", "ffmpeg.*video"],
+                        capture_output=True,
+                        text=True,
+                        timeout=2
+                    )
+                    
+                    if result.stdout.strip():
+                        print(f"  ⚠ Processos órfãos resistentes, usando SIGKILL...")
+                        subprocess.run(["pkill", "-9", "-f", "ffmpeg.*video"], timeout=2)
+                        time.sleep(0.5)
+                else:
+                    print(f"  ✓ Nenhum processo FFmpeg órfão encontrado")
+                    
+            except Exception as e:
+                print(f"  ⚠ Erro ao limpar órfãos: {e}")
             
             # Limpa processos zumbis
             self._cleanup_zombie_processes()
             
+            # Aguarda um pouco para garantir que dispositivos foram liberados
+            time.sleep(1)
+            
+            print("✅ Finalização de processos FFmpeg concluída")
+            
         except Exception as e:
-            print(f"Erro ao finalizar os processos do ffmpeg: {e}")
+            print(f"❌ Erro ao finalizar os processos do ffmpeg: {e}")
+            import traceback
+            traceback.print_exc()
         finally:
             self.ffmpeg_process_0 = None
             self.ffmpeg_process_1 = None
@@ -326,16 +320,22 @@ class FFMpegManager:
             prefix = "video2"
         
         try:
-            # Lista arquivos recentes
-            files = [f for f in os.listdir(disk_dir) if f.startswith(prefix) and f.endswith(".mp4")]
+            # Lista arquivos recentes (suporta .mp4 e .ts)
+            files = [f for f in os.listdir(disk_dir) if f.startswith(prefix) and (f.endswith(".mp4") or f.endswith(".ts"))]
             if files:
                 # Pega o arquivo mais recente
                 latest_file = max([os.path.join(disk_dir, f) for f in files], key=os.path.getmtime)
                 file_age = time.time() - os.path.getmtime(latest_file)
+                file_size = os.path.getsize(latest_file)
                 
                 # Se o arquivo mais recente tem mais de 5 minutos, algo está errado
                 if file_age > 300:  # 5 minutos
                     print(f"⚠️ ALERTA: Último arquivo de device{device_number} tem {file_age:.0f}s (>5min)")
+                    return False
+                
+                # Se o arquivo mais recente tem 0 bytes e mais de 10 segundos, algo está errado
+                if file_size == 0 and file_age > 10:
+                    print(f"⚠️ ALERTA: Arquivo mais recente está vazio há {file_age:.0f}s")
                     return False
             else:
                 print(f"⚠️ ALERTA: Nenhum arquivo encontrado para device{device_number}")
@@ -348,25 +348,48 @@ class FFMpegManager:
         return True
     
     def restart_dead_process(self, device_number):
-        """Reinicia um processo FFmpeg morto.
+        """Reinicia um processo FFmpeg morto de forma robusta.
         
         Args:
             device_number: 0 ou 1
         """
         print(f"🔄 Reiniciando processo FFmpeg para device{device_number}...")
         
+        # Log de restart
+        try:
+            timestamp = datetime.now().isoformat()
+            log_file = "/media/pi/usb64gb/bts/ffmpeg_restart_log.txt"
+            with open(log_file, "a") as f:
+                f.write(f"{timestamp} - Restarting device {device_number}\n")
+        except Exception as e:
+            print(f"Aviso: Não foi possível logar restart: {e}")
+        
         try:
             # Limpa processos zumbis primeiro
             self._cleanup_zombie_processes()
             
-            # Finaliza o processo antigo se ainda existir
+            # Finaliza o processo antigo de forma robusta
             process = self.ffmpeg_process_0 if device_number == 0 else self.ffmpeg_process_1
             if process:
                 try:
-                    os.killpg(os.getpgid(process.pid), signal.SIGKILL)
-                    process.wait(timeout=2)
-                except:
-                    pass
+                    pid = process.pid
+                    pgid = os.getpgid(pid)
+                    print(f"  → Finalizando processo antigo (PID {pid}, PGID {pgid})...")
+                    
+                    # Tenta SIGTERM primeiro
+                    os.killpg(pgid, signal.SIGTERM)
+                    try:
+                        process.wait(timeout=2)
+                        print(f"  ✓ Processo antigo finalizado gracefully")
+                    except subprocess.TimeoutExpired:
+                        print(f"  ⚠ Forçando SIGKILL...")
+                        os.killpg(pgid, signal.SIGKILL)
+                        process.wait(timeout=1)
+                        
+                except ProcessLookupError:
+                    print(f"  ℹ Processo antigo já estava morto")
+                except Exception as e:
+                    print(f"  ⚠ Erro ao finalizar processo antigo: {e}")
             
             # Reseta o processo
             if device_number == 0:
@@ -374,12 +397,40 @@ class FFMpegManager:
             else:
                 self.ffmpeg_process_1 = None
             
-            # Aguarda um pouco para o dispositivo estar disponível
-            time.sleep(2)
-            
-            # Verifica se o dispositivo existe
+            # Verifica se o dispositivo está sendo usado por algum processo órfão
             device_path = self.device_paths.get(device_number)
             if device_path and device_path.startswith("/dev/"):
+                print(f"  → Verificando se {device_path} está livre...")
+                
+                # Busca processos usando este dispositivo específico
+                try:
+                    result = subprocess.run(
+                        ["fuser", device_path],
+                        capture_output=True,
+                        text=True,
+                        timeout=2
+                    )
+                    
+                    if result.returncode == 0 and result.stdout.strip():
+                        orphan_pids = result.stdout.strip().split()
+                        print(f"  ⚠ Dispositivo em uso por PIDs: {orphan_pids}")
+                        print(f"  → Finalizando processos órfãos...")
+                        
+                        for pid in orphan_pids:
+                            try:
+                                subprocess.run(["kill", "-9", pid], timeout=1)
+                            except:
+                                pass
+                        
+                        time.sleep(0.5)
+                        print(f"  ✓ Processos órfãos finalizados")
+                    else:
+                        print(f"  ✓ Dispositivo livre")
+                        
+                except Exception as e:
+                    print(f"  ⚠ Erro ao verificar dispositivo: {e}")
+                
+                # Verifica se o dispositivo existe
                 if not os.path.exists(device_path):
                     print(f"❌ ERRO: Dispositivo {device_path} não existe! Câmera desconectada?")
                     # Tenta re-detectar as câmeras
@@ -388,6 +439,13 @@ class FFMpegManager:
                     if device_number not in self.detected_cameras:
                         print(f"❌ Câmera {device_number} não foi detectada após re-scan")
                         return False
+                    # Atualiza o device_path com o novo detectado
+                    device_path = self.detected_cameras[device_number]
+                    self.device_paths[device_number] = device_path
+                    print(f"✓ Câmera re-detectada: {device_path}")
+            
+            # Aguarda um pouco para garantir que o dispositivo está disponível
+            time.sleep(1)
             
             # Reinicia o processo
             input_source = "rtsp" if device_path and device_path.startswith("rtsp") else "usb"
@@ -433,6 +491,9 @@ class FFMpegManager:
                 # Limpa zumbis periodicamente
                 self._cleanup_zombie_processes()
                 
+                # Limpa arquivos 0-byte periodicamente
+                self._cleanup_empty_segments()
+                
             except Exception as e:
                 print(f"Erro no watchdog: {e}")
                 import traceback
@@ -445,6 +506,35 @@ class FFMpegManager:
                 time.sleep(1)
         
         print("🐕 Watchdog de processos FFmpeg finalizado")
+    
+    def _cleanup_empty_segments(self):
+        """Remove arquivos .ts e .mp4 com 0 bytes que indicam segmentos corrompidos."""
+        try:
+            cleaned_count = 0
+            for disk_dir in ["/media/pi/usb64gb/bts/stream1", "/media/pi/usb64gb/bts/stream2"]:
+                if not os.path.exists(disk_dir):
+                    continue
+                    
+                for filename in os.listdir(disk_dir):
+                    if filename.endswith('.ts') or filename.endswith('.mp4'):
+                        filepath = os.path.join(disk_dir, filename)
+                        try:
+                            # Remove se o arquivo tem 0 bytes e tem mais de 60 segundos
+                            file_size = os.path.getsize(filepath)
+                            file_age = time.time() - os.path.getmtime(filepath)
+                            
+                            if file_size == 0 and file_age > 60:
+                                print(f"🧹 Removendo arquivo vazio: {filename}")
+                                os.remove(filepath)
+                                cleaned_count += 1
+                        except Exception as e:
+                            print(f"Erro ao limpar {filename}: {e}")
+            
+            if cleaned_count > 0:
+                print(f"🧹 Limpeza concluída: {cleaned_count} arquivo(s) vazio(s) removido(s)")
+                
+        except Exception as e:
+            print(f"Erro na limpeza de arquivos vazios: {e}")
 
     def record_last_10_seconds(self, cam_id=0, duration=10):
         """
@@ -553,7 +643,7 @@ class FFMpegManager:
         """
         """
         Extrai um vídeo de 10 segundos baseado no timestamp fornecido.
-        Busca nos arquivos de segmento de 5 minutos.
+        Busca nos arquivos de segmento de 1 minuto.
         """
         try:
             # Define o diretório baseado na câmera
@@ -572,15 +662,15 @@ class FFMpegManager:
             search_start = event_time - timedelta(hours=6)
             search_end = event_time + timedelta(minutes=1)
             
-            # Lista todos os arquivos de segmento do disco
+            # Lista todos os arquivos de segmento do disco (suporta .mp4 e .ts)
             segment_files = []
             if os.path.exists(DISK_DIR):
                 for filename in os.listdir(DISK_DIR):
-                    if filename.startswith(PREFIX) and filename.endswith(".mp4"):
+                    if filename.startswith(PREFIX) and (filename.endswith(".mp4") or filename.endswith(".ts")):
                         try:
-                            # Parse do timestamp do nome do arquivo: video0_20260208_131022.mp4
-                            # Formato: PREFIX_YYYYMMDD_HHMMSS.mp4
-                            timestamp_part = filename.replace(f"{PREFIX}_", "").replace(".mp4", "")
+                            # Parse do timestamp do nome do arquivo: video0_20260208_131022.mp4 ou .ts
+                            # Formato: PREFIX_YYYYMMDD_HHMMSS.mp4 ou .ts
+                            timestamp_part = filename.replace(f"{PREFIX}_", "").replace(".mp4", "").replace(".ts", "")
                             file_time = datetime.strptime(timestamp_part, "%Y%m%d_%H%M%S")
                             
                             filepath = os.path.join(DISK_DIR, filename)
@@ -686,26 +776,98 @@ class FFMpegManager:
             # Calcula o offset dentro do arquivo
             # IMPORTANTE: Com reset_timestamps=1 no FFmpeg, cada arquivo inicia em 0
             # Então o offset é: (event_time - file_start_time)
-            # E queremos metade da duração ANTES do evento até metade DEPOIS
+            # Queremos recuperar TODA a duração ANTES do evento (ex: últimos 10s ou 15s)
             offset_in_file = (event_time - file_start_time).total_seconds()
-            seconds_before = duration / 2  # Metade antes do evento
-            offset_seconds = max(0, offset_in_file - seconds_before)
+            seconds_before = duration  # Toda a duração antes do evento
             
-            # Verifica se há conteúdo suficiente no arquivo
+            # EDGE CASE: Evento ocorre muito cedo no arquivo (menos de 'duration' segundos do início)
+            # Precisamos buscar conteúdo do arquivo ANTERIOR para completar a duração
+            previous_file = None
+            needs_previous_file = offset_in_file < duration
+            
+            if needs_previous_file:
+                missing_seconds = duration - offset_in_file
+                print(f"INFO: Evento ocorre em {offset_in_file:.1f}s do início do arquivo.")
+                print(f"      Faltam {missing_seconds:.1f}s para completar {duration}s. Buscando arquivo anterior...")
+                
+                # Busca o arquivo anterior (1 minuto antes)
+                previous_file_start = file_start_time - timedelta(seconds=SEGMENT_DURATION_SECONDS)
+                previous_file_path = None
+                
+                # Tenta encontrar o arquivo anterior (mp4 ou ts)
+                for ext in [".mp4", ".ts"]:
+                    prev_filename = previous_file_start.strftime(f"{PREFIX}_%Y%m%d_%H%M%S{ext}")
+                    candidate_path = os.path.join(DISK_DIR, prev_filename)
+                    if os.path.exists(candidate_path):
+                        previous_file_path = candidate_path
+                        break
+                
+                if previous_file_path and os.path.exists(previous_file_path):
+                    # Verifica se o arquivo anterior está completo
+                    prev_age = time.time() - os.path.getmtime(previous_file_path)
+                    prev_size = os.path.getsize(previous_file_path)
+                    
+                    if prev_age < 15:
+                        print(f"ERRO: Arquivo anterior muito recente ({prev_age:.1f}s), aguardar mais tempo")
+                        return False
+                    
+                    if prev_size < 100000:
+                        print(f"ERRO: Arquivo anterior muito pequeno ({prev_size} bytes), pode estar corrompido")
+                        return False
+                    
+                    # Valida continuidade temporal: arquivo anterior deve estar no máximo 90s antes
+                    # (normal seria 60s, mas dá margem para pequenos atrasos na gravação)
+                    time_gap = (file_start_time - previous_file_start).total_seconds()
+                    if time_gap > 90:  # Mais de 90 segundos indica gap na gravação
+                        print(f"AVISO: Gap detectado entre arquivos ({time_gap:.0f}s > 90s).")
+                        print(f"       Arquivo anterior muito distante. Usando apenas conteúdo disponível desde início.")
+                        print(f"       Vídeo terá {offset_in_file:.1f}s ao invés de {duration}s")
+                        # Não usa o arquivo anterior, apenas o conteúdo atual
+                    else:
+                        previous_file = previous_file_path
+                        print(f"      Arquivo anterior encontrado: {os.path.basename(previous_file)}")
+                        print(f"      Continuidade temporal validada: {time_gap:.0f}s entre arquivos")
+                else:
+                    print(f"AVISO: Arquivo anterior não encontrado. Usando conteúdo disponível desde início.")
+                    print(f"       Vídeo terá {offset_in_file:.1f}s ao invés de {duration}s")
+                    # Continua mesmo sem arquivo anterior, recuperando o máximo possível
+            
+            # Calcula offset para extração
+            if needs_previous_file and previous_file:
+                # Vai extrair do arquivo anterior + arquivo atual
+                offset_seconds = 0  # Do arquivo atual, pega desde o início até o evento
+            else:
+                # Extração normal: subtrai a duração do offset
+                offset_seconds = max(0, offset_in_file - seconds_before)
+            
+            # Se não há arquivo anterior mas precisa, ajusta a duração efetiva
+            effective_duration = duration
+            if needs_previous_file and not previous_file:
+                # Só há conteúdo desde o início do arquivo até o evento
+                effective_duration = offset_in_file
+                print(f"      Ajustando duração para {effective_duration:.1f}s (conteúdo disponível desde início do arquivo)")
+            
+            # Verifica se há conteúdo suficiente no arquivo (para eventos no FINAL)
             available_content = SEGMENT_DURATION_SECONDS - offset_seconds
-            needs_concatenation = available_content < duration
+            needs_concatenation = available_content < effective_duration
             next_file = None
             
             if needs_concatenation:
-                print(f"INFO: Evento próximo ao final. Disponível: {available_content:.1f}s, necessário: {duration}s")
+                print(f"INFO: Evento próximo ao final. Disponível: {available_content:.1f}s, necessário: {effective_duration}s")
                 print(f"      Buscando próximo segmento para concatenação...")
                 
-                # Busca o próximo arquivo de segmento
+                # Busca o próximo arquivo de segmento (tenta .mp4 e .ts)
                 next_file_start = file_start_time + timedelta(seconds=SEGMENT_DURATION_SECONDS)
-                next_filename = next_file_start.strftime(f"{PREFIX}_%Y%m%d_%H%M%S.mp4")
-                next_file_path = os.path.join(DISK_DIR, next_filename)
+                next_file_path = None
+                # Tenta encontrar o próximo arquivo (mp4 ou ts)
+                for ext in [".mp4", ".ts"]:
+                    next_filename = next_file_start.strftime(f"{PREFIX}_%Y%m%d_%H%M%S{ext}")
+                    candidate_path = os.path.join(DISK_DIR, next_filename)
+                    if os.path.exists(candidate_path):
+                        next_file_path = candidate_path
+                        break
                 
-                if os.path.exists(next_file_path):
+                if next_file_path and os.path.exists(next_file_path):
                     # Verifica se o próximo arquivo não é o segmento atual
                     next_age = time.time() - os.path.getmtime(next_file_path)
                     if next_age < 15:
@@ -714,12 +876,12 @@ class FFMpegManager:
                     next_file = next_file_path
                     print(f"      Próximo segmento encontrado: {os.path.basename(next_file)}")
                 else:
-                    print(f"ERRO: Próximo segmento não encontrado: {next_filename}")
+                    print(f"ERRO: Próximo segmento não encontrado (tentou .mp4 e .ts)")
                     return False
             
             # Verifica se o evento está realmente dentro do arquivo (com margem para o clipe)
-            if not needs_concatenation and offset_seconds > (SEGMENT_DURATION_SECONDS - duration):
-                print(f"ERRO: Offset {offset_seconds:.2f}s muito grande para arquivo de {SEGMENT_DURATION_SECONDS}s (duração: {duration}s)")
+            if not needs_concatenation and not needs_previous_file and offset_seconds > (SEGMENT_DURATION_SECONDS - effective_duration):
+                print(f"ERRO: Offset {offset_seconds:.2f}s muito grande para arquivo de {SEGMENT_DURATION_SECONDS}s (duração: {effective_duration}s)")
                 return False
             
             print(f"DEBUG: Offset calculado: {offset_seconds:.2f}s no arquivo {os.path.basename(target_file)}")
@@ -735,8 +897,64 @@ class FFMpegManager:
             stream_name = "stream1" if cam_id == 0 else "stream2"
             output_file = os.path.join(date_folder_path, f"{device_name}_{stream_name}_{timestamp_str}.mp4")
             
-            # Extração com ou sem concatenação
-            if needs_concatenation and next_file:
+            # Extração com diferentes cenários
+            if needs_previous_file and previous_file:
+                # CENÁRIO 1: Evento muito cedo - precisa arquivo ANTERIOR + arquivo atual
+                missing_seconds = duration - offset_in_file
+                print(f"Extraindo vídeo COM ARQUIVO ANTERIOR: {os.path.basename(previous_file)} + {os.path.basename(target_file)}")
+                print(f"      Extraindo últimos {missing_seconds:.1f}s do anterior + primeiros {offset_in_file:.1f}s do atual")
+                
+                temp_prev = os.path.join("/tmp", f"prev_{timestamp_str}.mp4")
+                temp_curr = os.path.join("/tmp", f"curr_{timestamp_str}.mp4")
+                concat_list = os.path.join("/tmp", f"concat_{timestamp_str}.txt")
+                
+                try:
+                    # Parte 1: Últimos N segundos do arquivo anterior
+                    # Arquivo anterior tem 60s, queremos os últimos 'missing_seconds' segundos
+                    prev_start_offset = SEGMENT_DURATION_SECONDS - missing_seconds
+                    cmd_prev = ["ffmpeg", "-y", "-i", previous_file, "-ss", str(prev_start_offset), "-t", str(missing_seconds), "-c:v", "copy", temp_prev]
+                    result_prev = subprocess.run(cmd_prev, capture_output=True, text=True, timeout=30)
+                    if result_prev.returncode != 0:
+                        print(f"ERRO ao extrair do arquivo anterior: {result_prev.stderr}")
+                        return False
+                    
+                    # Parte 2: Do início do arquivo atual até o evento
+                    cmd_curr = ["ffmpeg", "-y", "-i", target_file, "-t", str(offset_in_file), "-c:v", "copy", temp_curr]
+                    result_curr = subprocess.run(cmd_curr, capture_output=True, text=True, timeout=30)
+                    if result_curr.returncode != 0:
+                        print(f"ERRO ao extrair do arquivo atual: {result_curr.stderr}")
+                        return False
+                    
+                    # Cria lista para concatenação
+                    with open(concat_list, "w") as f:
+                        f.write(f"file '{temp_prev}'\n")
+                        f.write(f"file '{temp_curr}'\n")
+                    
+                    # Concatena as partes
+                    extract_cmd = [
+                        "ffmpeg", "-y",
+                        "-f", "concat",
+                        "-safe", "0",
+                        "-i", concat_list,
+                        "-c", "copy",
+                        "-avoid_negative_ts", "make_zero",
+                        "-movflags", "+faststart",
+                        output_file
+                    ]
+                    
+                    result = subprocess.run(extract_cmd, capture_output=True, text=True, timeout=30)
+                    
+                finally:
+                    # Remove arquivos temporários
+                    for temp_file in [temp_prev, temp_curr, concat_list]:
+                        try:
+                            if os.path.exists(temp_file):
+                                os.remove(temp_file)
+                        except:
+                            pass
+                    
+            elif needs_concatenation and next_file:
+                # CENÁRIO 2: Evento muito tarde - precisa arquivo atual + arquivo SEGUINTE
                 print(f"Extraindo vídeo COM CONCATENAÇÃO: {os.path.basename(target_file)} + {os.path.basename(next_file)}")
                 
                 # Extrai de cada arquivo separadamente
@@ -753,7 +971,7 @@ class FFMpegManager:
                         return False
                     
                     # Parte 2: do início do próximo arquivo até completar a duração
-                    remaining_duration = duration - available_content
+                    remaining_duration = effective_duration - available_content
                     cmd_part2 = ["ffmpeg", "-y", "-i", next_file, "-t", str(remaining_duration), "-c:v", "copy", temp_part2]
                     result2 = subprocess.run(cmd_part2, capture_output=True, text=True, timeout=30)
                     if result2.returncode != 0:
@@ -789,18 +1007,19 @@ class FFMpegManager:
                             pass
                     
             else:
-                # Extração normal de um único arquivo
+                # CENÁRIO 3: Evento normal no meio do arquivo - extração simples
                 extract_cmd = [
                     "ffmpeg", "-y",
                     "-i", target_file,
                     "-ss", str(offset_seconds),
-                    "-t", str(duration),
+                    "-t", str(effective_duration),
                     "-c:v", "copy",
                     "-avoid_negative_ts", "make_zero",
                     "-movflags", "+faststart",
                     output_file
                 ]
-                print(f"Extraindo vídeo: arquivo={os.path.basename(target_file)}, offset={offset_seconds:.2f}s -> {os.path.basename(output_file)}")
+                print(f"Extraindo vídeo: arquivo={os.path.basename(target_file)}, offset={offset_seconds:.2f}s, duração={effective_duration}s")
+                print(f"      Recuperando {effective_duration}s ANTES do evento (de {offset_seconds:.2f}s até {offset_seconds + effective_duration:.2f}s)")
                 result = subprocess.run(extract_cmd, capture_output=True, text=True)
             
             if result.returncode != 0:

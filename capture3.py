@@ -29,22 +29,30 @@ os.makedirs("/tmp/buffers/video2", exist_ok=True)
 # Inicializa o Flask e o GPIO
 GPIO = setup_gpio()
 
-
 # Inicializa o gerenciador de ffmpeg
 ffmpeg_manager = FFMpegManager(BUFFER_DIR_VIDEO0, BUFFER_DIR_VIDEO2, FINAL_DIR, STREAM_DIR)
-ffmpeg_manager.start_ffmpeg_processes(0, "usb")
-ffmpeg_manager.start_ffmpeg_processes(1, "usb")
-# ffmpeg_manager.start_ffmpeg_processes(0,"rtsp", "rtsp://admin:123456@192.168.1.188/stream0")
-# ffmpeg_manager.start_ffmpeg_processes(1,"rtsp", "rtsp://admin:123456@192.168.1.188/stream1")
 
-
-
-
-
-start_temperature_monitoring(BASE_DIR)
-
-# Inicializa o Flask
+# Inicializa o Flask ANTES de iniciar FFmpeg
 app = create_app(ffmpeg_manager)
+
+# IMPORTANTE: Só inicia FFmpeg e watchdog quando usado com gunicorn preload
+# ou quando rodado diretamente (não em múltiplos workers)
+if os.environ.get('SERVER_SOFTWARE', '').startswith('gunicorn'):
+    # Rodando em gunicorn - só inicia no master process com preload
+    import sys
+    if '--preload' in sys.argv or 'gunicorn_config.py' in ' '.join(sys.argv):
+        print("🎥 Inicializando FFmpeg no master process...")
+        ffmpeg_manager.start_ffmpeg_processes(0, "usb")
+        ffmpeg_manager.start_ffmpeg_processes(1, "usb")
+        # ffmpeg_manager.start_ffmpeg_processes(0,"rtsp", "rtsp://admin:123456@192.168.1.188/stream0")
+        # ffmpeg_manager.start_ffmpeg_processes(1,"rtsp", "rtsp://admin:123456@192.168.1.188/stream1")
+        start_temperature_monitoring(BASE_DIR)
+else:
+    # Rodando diretamente (python capture3.py)
+    print("🎥 Inicializando FFmpeg em modo standalone...")
+    ffmpeg_manager.start_ffmpeg_processes(0, "usb")
+    ffmpeg_manager.start_ffmpeg_processes(1, "usb")
+    start_temperature_monitoring(BASE_DIR)
 
 # Função principal
 def main():
