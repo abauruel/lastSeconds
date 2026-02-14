@@ -3,7 +3,7 @@
 # Script para verificar integridade de arquivos de vídeo usando ffprobe
 # Pasta alvo: /media/pi/usb64gb/bts/stream1/
 
-TARGET_DIR="/media/pi/usb64gb/bts/stream2/"
+TARGET_DIR="/media/pi/usb64gb/bts/stream1/"
 LOG_FILE="video_integrity_$(date +%Y%m%d_%H%M%S).log"
 
 echo "========================================" | tee "$LOG_FILE"

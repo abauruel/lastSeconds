@@ -21,6 +21,30 @@ O sistema mantém duas câmeras gravando continuamente em segmentos de **1 minut
 - ✅ **Extração inteligente**: Recupera sempre segundos ANTES do evento, busca arquivos anteriores quando necessário
 - ✅ **Validação temporal**: Garante continuidade entre segmentos (gap máximo 90s)
 - ✅ **Duração customizável**: Suporta clipes de qualquer duração via API
+- ✅ **Gravação em RAM**: Buffer em tmpfs elimina corrupção por I/O lento do pendrive
+- ✅ **Sincronização automática**: Cron move arquivos para pendrive a cada 1 minuto
+- ✅ **Alta performance**: ~1000 MB/s em RAM vs ~10-30 MB/s em pendrive USB
+
+## 📚 Documentação
+
+### 🚀 Instalação e Configuração
+- **[Quick Start](docs/QUICK_START.md)** - ⭐ Guia completo de instalação do zero
+- **[Guia de Gravação em RAM](docs/RAM_RECORDING_GUIDE.md)** - Sistema de buffer em tmpfs e sincronização automática
+- **[Inicialização Automática](docs/AUTO_START_INFO.md)** - Configuração de auto-start após reboot
+
+### 📊 Operação e Monitoramento
+- **[Monitoramento](docs/MONITORING.md)** - Ferramentas de monitoramento e health checks
+- **[Processamento de Timestamps](docs/PROCESS_TIMESTAMPS_USAGE.md)** - Como processar eventos registrados
+- **[Exemplos de API](docs/API_EXAMPLES.md)** - Exemplos de uso da API REST
+
+### 📹 Streaming e Câmeras
+- **[Guia de Streaming](docs/STREAMING_GUIDE.md)** - Como visualizar câmeras ao vivo (HLS/RTMP)
+- **[Acesso às Câmeras](docs/ACESSO_CAMERAS.md)** - Informações de acesso às câmeras
+- **[Diagnóstico de Streams](docs/DIAGNOSTICO_STREAMS.md)** - Troubleshooting de streaming
+
+### 🔧 Manutenção e Troubleshooting
+- **[Correção de Arquivos Corrompidos](docs/CORRUPTED_FILES_FIX.md)** - Como lidar com arquivos corrompidos
+- **[Skills](docs/SKILLS.md)** - Habilidades e capacidades do sistema
 
 ## 🏗️ Arquitetura
 
@@ -56,12 +80,14 @@ O sistema mantém duas câmeras gravando continuamente em segmentos de **1 minut
 
 ### Fluxo de Dados
 
-1. **Gravação Contínua**
+1. **Gravação Contínua (RAM)**
    - FFmpeg captura vídeo de ambas as câmeras
-   - Gera segmentos de 1 minuto com timestamps no nome
+   - Gera segmentos de 1 minuto direto em **RAM** (`/dev/shm/bts/`)
+   - Elimina timeouts e corrupção por I/O lento
    - Usa `segment_atclocktime` para evitar arquivos corrompidos
    - Formato: `video0_YYYYMMDD_HHMMSS.ts` (MPEG-TS para melhor streaming)
    - Watchdog monitora saúde dos processos a cada 60s
+   - **Sincronização:** Cron move arquivos >1min para pendrive a cada 1 minuto
 
 2. **Detecção de Evento**
    - Botão GPIO ou chamada de API
@@ -72,9 +98,11 @@ O sistema mantém duas câmeras gravando continuamente em segmentos de **1 minut
 3. **Processamento Manual**
    - Chamada à rota `/process_timestamps`
    - Sistema busca arquivo(s) de segmento que contém o timestamp
+   - Verifica primeiro em RAM, depois em pendrive
    - Extrai N segundos ANTES do evento (padrão: 10s)
    - Busca arquivo anterior se evento está no início do segmento
    - Valida continuidade temporal (gap máximo 90s entre arquivos)
+   - Timeouts estendidos (90s FFmpeg, 300s Gunicorn)
    - Gera thumbnail e salva no banco de dados
 
 4. **Arquitetura Gunicorn**
@@ -119,22 +147,53 @@ pip3 install -r requirements_uploader.txt
 
 ### Configuração
 
-1. **Criar diretórios necessários**
+#### 1. **Criar diretórios necessários**
 
 ```bash
-# Criar estrutura de diretórios
+# Estrutura em Pendrive (backup permanente)
 sudo mkdir -p /media/pi/usb64gb/bts/stream1
 sudo mkdir -p /media/pi/usb64gb/bts/stream2
+
+# Estrutura em RAM (gravação rápida) - criada automaticamente pelo serviço
+# /dev/shm/bts/stream1
+# /dev/shm/bts/stream2
+
+# Diretórios de processamento
 sudo mkdir -p /home/pi/app/recordings/streams
 sudo mkdir -p /home/pi/app/recordings/buffers/video0
 sudo mkdir -p /home/pi/app/recordings/buffers/video2
+sudo mkdir -p /home/pi/app/logs
 
 # Ajustar permissões
 sudo chown -R pi:pi /media/pi/usb64gb/bts
 sudo chown -R pi:pi /home/pi/app/recordings
+sudo chown -R pi:pi /home/pi/app/logs
 ```
 
-2. **Configurar serviço systemd**
+#### 2. **Configurar gravação em RAM (Recomendado)**
+
+```bash
+# Executar script de setup automático
+cd /home/pi/app
+sudo ./setup_ram_recording.sh
+
+# O script irá:
+# - Criar diretórios em /dev/shm/bts/
+# - Configurar sincronização automática (cron a cada 1 minuto)
+# - Criar arquivo .env.ram com variáveis de ambiente
+# - Configurar logs em /home/pi/app/logs/
+```
+
+**Benefícios da gravação em RAM:**
+- ✅ Elimina corrupção de arquivos (linha verde)
+- ✅ Sem timeouts de gravação
+- ✅ Performance ~1000 MB/s vs ~10-30 MB/s
+- ✅ Buffer de ~5 minutos sempre disponível
+- ✅ Sincronização automática para pendrive a cada 1 minuto
+
+**Ver documentação completa:** [AUTO_START_INFO.md](docs/AUTO_START_INFO.md)
+
+#### 3. **Configurar serviço systemd**
 
 ```bash
 # Usar o script de atualização (recomendado)
@@ -153,6 +212,8 @@ O sistema usa **Gunicorn** com configuração otimizada em `gunicorn_config.py`:
 
 - **2 workers** (suficiente para carga)
 - **preload_app=True** - FFmpeg inicializado apenas uma vez no master process
+- **timeout=300s** - 5 minutos para operações longas (processamento de vídeo)
+- **Logs em disco interno** (`/home/pi/app/logs/`) - evita I/O no pendrive
 - Evita conflitos de múltiplos watchdogs competindo pelos mesmos processos
 
 **Importante:** Não aumentar o número de workers! Cada worker adicional tentaria gerenciar os mesmos processos FFmpeg, causando loops de restart.

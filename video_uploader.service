@@ -7,8 +7,9 @@ Type=simple
 User=pi
 WorkingDirectory=/home/pi/app
 Environment=PYTHONPATH=/home/pi/app
-ExecStart=/usr/bin/python3 /home/pi/app/video_uploader.py
+ExecStart=/bin/bash -c 'cd /home/pi/app && source .venv/bin/activate && python video_uploader.py'
 Restart=always
+User=root
 RestartSec=10
 
 [Install]

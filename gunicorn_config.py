@@ -18,12 +18,12 @@ workers = 2
 # Isso garante que FFMpegManager seja inicializado apenas uma vez
 preload_app = True
 
-# Timeout
-timeout = 120
+# Timeout (aumentado para 300s = 5min devido a operações de vídeo lentas no pendrive)
+timeout = 300
 
-# Logging
-accesslog = "/media/pi/usb64gb/bts/gunicorn_access.log"
-errorlog = "/media/pi/usb64gb/bts/gunicorn_error.log"
+# Logging (movido para disco interno para evitar deadlock de I/O no pendrive)
+accesslog = "/home/pi/app/logs/gunicorn_access.log"
+errorlog = "/home/pi/app/logs/gunicorn_error.log"
 loglevel = "info"
 
 # Worker class

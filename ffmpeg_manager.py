@@ -41,6 +41,9 @@ class FFMpegManager:
         # Watchdog thread para monitorar saúde dos processos
         self.watchdog_running = False
         self.watchdog_thread = None
+        # Controle de tentativas de restart/re-detecção
+        self.last_restart_attempt = {0: 0, 1: 0}
+        self.restart_cooldown_seconds = 10
     
     def detect_usb_cameras(self):
         """
@@ -91,14 +94,24 @@ class FFMpegManager:
             self.device_paths[device_number] = DEVICE  # Armazena o stream path
         
         # Configuração baseada no device_number
+        # Suporte para gravação em RAM via variáveis de ambiente
         if device_number == 0:
             PREFIX="video0"
             BUFFER_DIR = f"{self.buffer_dir_video0}"
-            DISK_DIR = "/media/pi/usb64gb/bts/stream1"
+            DISK_DIR = os.environ.get("BTS_STREAM1_DIR", "/media/pi/usb64gb/bts/stream1")
         else:
             PREFIX="video2"
             BUFFER_DIR = f"{self.buffer_dir_video2}"
-            DISK_DIR = "/media/pi/usb64gb/bts/stream2"
+            DISK_DIR = os.environ.get("BTS_STREAM2_DIR", "/media/pi/usb64gb/bts/stream2")
+        
+        # Cria diretório se não existir (importante para RAM)
+        os.makedirs(DISK_DIR, exist_ok=True)
+        
+        # Indica se está usando RAM
+        if DISK_DIR.startswith("/dev/shm"):
+            print(f"⚡ MODO RAM: Gravando em {DISK_DIR} (alta performance)")
+        else:
+            print(f"💾 MODO DISCO: Gravando em {DISK_DIR}")
             
         STREAM_NAME = DISK_DIR.split('/')[-1]
         print(f"stream name: {STREAM_NAME}")
@@ -313,10 +326,10 @@ class FFMpegManager:
         
         # Verifica se está gerando arquivos recentemente (últimos 5 minutos)
         if device_number == 0:
-            disk_dir = "/media/pi/usb64gb/bts/stream1"
+            disk_dir = os.environ.get("BTS_STREAM1_DIR", "/media/pi/usb64gb/bts/stream1")
             prefix = "video0"
         else:
-            disk_dir = "/media/pi/usb64gb/bts/stream2"
+            disk_dir = os.environ.get("BTS_STREAM2_DIR", "/media/pi/usb64gb/bts/stream2")
             prefix = "video2"
         
         try:
@@ -459,6 +472,31 @@ class FFMpegManager:
             import traceback
             traceback.print_exc()
             return False
+
+    def _ensure_device_running(self, device_number):
+        """Garante que o device esteja rodando quando disponível.
+
+        Se a câmera não estiver presente, aguarda e tenta novamente.
+        Usa cooldown para evitar loop agressivo.
+        """
+        now = time.time()
+        if now - self.last_restart_attempt.get(device_number, 0) < self.restart_cooldown_seconds:
+            return
+
+        self.last_restart_attempt[device_number] = now
+
+        # Re-detecta câmeras
+        self.detected_cameras = self.detect_usb_cameras()
+        if device_number not in self.detected_cameras:
+            print(f"⚠️ Watchdog: Câmera {device_number} ausente. Aguardando reconexão...")
+            return
+
+        device_path = self.detected_cameras[device_number]
+        self.device_paths[device_number] = device_path
+
+        # Inicia o processo se não estiver rodando
+        print(f"🔄 Watchdog: Iniciando device{device_number} ({device_path})...")
+        self.start_ffmpeg_processes(device_number=device_number, input_source="usb", stream=device_path)
     
     def start_watchdog(self):
         """Inicia thread de monitoramento dos processos FFmpeg."""
@@ -472,7 +510,7 @@ class FFMpegManager:
     
     def _watchdog_loop(self):
         """Loop principal do watchdog que monitora os processos."""
-        check_interval = 60  # Verifica a cada 60 segundos
+        check_interval = 15  # Verifica a cada 15 segundos
         
         while self.watchdog_running:
             try:
@@ -481,12 +519,16 @@ class FFMpegManager:
                     if not self.check_process_health(0):
                         print("🚨 Device 0 não está saudável, tentando restart...")
                         self.restart_dead_process(0)
+                else:
+                    self._ensure_device_running(0)
                 
                 # Verifica device 1
                 if self.ffmpeg_process_1 is not None:
                     if not self.check_process_health(1):
                         print("🚨 Device 1 não está saudável, tentando restart...")
                         self.restart_dead_process(1)
+                else:
+                    self._ensure_device_running(1)
                 
                 # Limpa zumbis periodicamente
                 self._cleanup_zombie_processes()
@@ -511,7 +553,9 @@ class FFMpegManager:
         """Remove arquivos .ts e .mp4 com 0 bytes que indicam segmentos corrompidos."""
         try:
             cleaned_count = 0
-            for disk_dir in ["/media/pi/usb64gb/bts/stream1", "/media/pi/usb64gb/bts/stream2"]:
+            stream1_dir = os.environ.get("BTS_STREAM1_DIR", "/media/pi/usb64gb/bts/stream1")
+            stream2_dir = os.environ.get("BTS_STREAM2_DIR", "/media/pi/usb64gb/bts/stream2")
+            for disk_dir in [stream1_dir, stream2_dir]:
                 if not os.path.exists(disk_dir):
                     continue
                     
@@ -646,16 +690,26 @@ class FFMpegManager:
         Busca nos arquivos de segmento de 1 minuto.
         """
         try:
+            print(f"\n{'='*60}")
+            print(f"DEBUG: Iniciando _extract_video_from_timestamp")
+            print(f"  timestamp_epoch: {timestamp_epoch}")
+            print(f"  cam_id: {cam_id}")
+            print(f"  duration: {duration}s")
+            print(f"{'='*60}")
+            
             # Define o diretório baseado na câmera
             if cam_id == 0:
-                DISK_DIR = "/media/pi/usb64gb/bts/stream1"
+                DISK_DIR = os.environ.get("BTS_STREAM1_DIR", "/media/pi/usb64gb/bts/stream1")
                 PREFIX = "video0"
             else:
-                DISK_DIR = "/media/pi/usb64gb/bts/stream2"
+                DISK_DIR = os.environ.get("BTS_STREAM2_DIR", "/media/pi/usb64gb/bts/stream2")
                 PREFIX = "video2"
+            
+            print(f"DEBUG: DISK_DIR={DISK_DIR}, PREFIX={PREFIX}")
             
             # Converte timestamp para datetime
             event_time = datetime.fromtimestamp(timestamp_epoch)
+            print(f"DEBUG: event_time={event_time}")
             
             # Busca o arquivo de segmento que contém o timestamp
             # Segmentos de 1 minuto, busca 6 horas antes e 1 minuto depois
@@ -760,16 +814,27 @@ class FFMpegManager:
             
             # Valida integridade do arquivo verificando se pode ser lido
             try:
+                print(f"DEBUG: Validando arquivo com ffprobe (timeout: 90s)...")
                 probe_cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", target_file]
-                probe_result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=15)
+                probe_result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=90)
+                print(f"DEBUG: ffprobe returncode: {probe_result.returncode}")
+                
                 if probe_result.returncode != 0 or not probe_result.stdout.strip():
                     print(f"ERRO: Arquivo {os.path.basename(target_file)} corrompido ou ilegível (ffprobe falhou)")
+                    print(f"  stderr: {probe_result.stderr[:200]}")
                     return False
+                    
                 file_duration = float(probe_result.stdout.strip())
+                print(f"DEBUG: Duração do arquivo: {file_duration:.2f}s")
+                
                 if file_duration < 10:  # Arquivo de 60s deveria ter pelo menos 10s de conteúdo válido
                     print(f"AVISO: Arquivo {os.path.basename(target_file)} tem duração muito curta ({file_duration:.1f}s), pode estar corrompido")
                     return False
-            except (subprocess.TimeoutExpired, ValueError, Exception) as e:
+            except subprocess.TimeoutExpired as e:
+                print(f"ERRO: Timeout ao validar arquivo {os.path.basename(target_file)} após 90s")
+                print(f"  Possível problema de I/O no disco ou arquivo corrompido")
+                return False
+            except (ValueError, Exception) as e:
                 print(f"ERRO: Falha ao validar arquivo {os.path.basename(target_file)}: {e}")
                 return False
             
@@ -790,17 +855,21 @@ class FFMpegManager:
                 print(f"INFO: Evento ocorre em {offset_in_file:.1f}s do início do arquivo.")
                 print(f"      Faltam {missing_seconds:.1f}s para completar {duration}s. Buscando arquivo anterior...")
                 
-                # Busca o arquivo anterior (1 minuto antes)
-                previous_file_start = file_start_time - timedelta(seconds=SEGMENT_DURATION_SECONDS)
+                # Busca o arquivo imediatamente anterior na lista ordenada de segmentos
+                # (em vez de calcular nome exato, pois os timestamps não são perfeitamente alinhados)
                 previous_file_path = None
+                target_index = None
                 
-                # Tenta encontrar o arquivo anterior (mp4 ou ts)
-                for ext in [".mp4", ".ts"]:
-                    prev_filename = previous_file_start.strftime(f"{PREFIX}_%Y%m%d_%H%M%S{ext}")
-                    candidate_path = os.path.join(DISK_DIR, prev_filename)
-                    if os.path.exists(candidate_path):
-                        previous_file_path = candidate_path
+                # Encontra o índice do arquivo atual na lista
+                for i, (filepath, file_time) in enumerate(segment_files):
+                    if filepath == target_file:
+                        target_index = i
                         break
+                
+                # Pega o arquivo anterior da lista (índice - 1)
+                if target_index is not None and target_index > 0:
+                    previous_file_path, previous_file_start = segment_files[target_index - 1]
+                    print(f"DEBUG: Arquivo anterior encontrado na lista: {os.path.basename(previous_file_path)}")
                 
                 if previous_file_path and os.path.exists(previous_file_path):
                     # Verifica se o arquivo anterior está completo
@@ -912,23 +981,70 @@ class FFMpegManager:
                     # Parte 1: Últimos N segundos do arquivo anterior
                     # Arquivo anterior tem 60s, queremos os últimos 'missing_seconds' segundos
                     prev_start_offset = SEGMENT_DURATION_SECONDS - missing_seconds
-                    cmd_prev = ["ffmpeg", "-y", "-i", previous_file, "-ss", str(prev_start_offset), "-t", str(missing_seconds), "-c:v", "copy", temp_prev]
-                    result_prev = subprocess.run(cmd_prev, capture_output=True, text=True, timeout=30)
+                    
+                    # Adiciona flags para lidar com arquivos corrompidos
+                    cmd_prev = [
+                        "ffmpeg", "-y",
+                        "-err_detect", "ignore_err",  # Ignora erros de decodificação
+                        "-i", previous_file,
+                        "-ss", str(prev_start_offset),
+                        "-t", str(missing_seconds),
+                        "-c:v", "copy",
+                        "-avoid_negative_ts", "make_zero",  # Corrige timestamps negativos
+                        temp_prev
+                    ]
+                    
+                    print(f"DEBUG: Executando extração do arquivo anterior")
+                    print(f"  Comando: {' '.join(cmd_prev)}")
+                    print(f"  prev_start_offset: {prev_start_offset}s")
+                    print(f"  missing_seconds: {missing_seconds}s")
+                    
+                    result_prev = subprocess.run(cmd_prev, capture_output=True, text=True, timeout=90)
+                    print(f"DEBUG: Resultado extração anterior - returncode: {result_prev.returncode}")
+                    
                     if result_prev.returncode != 0:
                         print(f"ERRO ao extrair do arquivo anterior: {result_prev.stderr}")
                         return False
                     
+                    print(f"DEBUG: Arquivo anterior extraído com sucesso: {temp_prev}")
+                    if os.path.exists(temp_prev):
+                        print(f"  Tamanho: {os.path.getsize(temp_prev)} bytes")
+                    
                     # Parte 2: Do início do arquivo atual até o evento
-                    cmd_curr = ["ffmpeg", "-y", "-i", target_file, "-t", str(offset_in_file), "-c:v", "copy", temp_curr]
-                    result_curr = subprocess.run(cmd_curr, capture_output=True, text=True, timeout=30)
-                    if result_curr.returncode != 0:
-                        print(f"ERRO ao extrair do arquivo atual: {result_curr.stderr}")
-                        return False
+                    # EDGE CASE: Se offset_in_file < 0.5s, pular extração do arquivo atual
+                    # (FFmpeg falha ao extrair ~0 segundos)
+                    print(f"\nDEBUG: Verificando se precisa extrair do arquivo atual")
+                    print(f"  offset_in_file: {offset_in_file:.3f}s")
+                    
+                    if offset_in_file >= 0.5:
+                        cmd_curr = ["ffmpeg", "-y", "-i", target_file, "-t", str(offset_in_file), "-c:v", "copy", temp_curr]
+                        print(f"DEBUG: Executando extração do arquivo atual")
+                        print(f"  Comando: {' '.join(cmd_curr)}")
+                        
+                        result_curr = subprocess.run(cmd_curr, capture_output=True, text=True, timeout=90)
+                        print(f"DEBUG: Resultado extração atual - returncode: {result_curr.returncode}")
+                        
+                        if result_curr.returncode != 0:
+                            print(f"ERRO ao extrair do arquivo atual: {result_curr.stderr}")
+                            return False
+                        
+                        print(f"DEBUG: Arquivo atual extraído com sucesso: {temp_curr}")
+                        if os.path.exists(temp_curr):
+                            print(f"  Tamanho: {os.path.getsize(temp_curr)} bytes")
+                    else:
+                        print(f"INFO: Offset muito pequeno ({offset_in_file:.3f}s), usando apenas arquivo anterior")
+                        temp_curr = None  # Não usar arquivo atual
                     
                     # Cria lista para concatenação
+                    print(f"\nDEBUG: Criando lista de concatenação: {concat_list}")
                     with open(concat_list, "w") as f:
                         f.write(f"file '{temp_prev}'\n")
-                        f.write(f"file '{temp_curr}'\n")
+                        print(f"  Arquivo 1: {temp_prev}")
+                        if temp_curr and os.path.exists(temp_curr):
+                            f.write(f"file '{temp_curr}'\n")
+                            print(f"  Arquivo 2: {temp_curr}")
+                        else:
+                            print(f"  Arquivo 2: (nenhum - usando apenas anterior)")
                     
                     # Concatena as partes
                     extract_cmd = [
@@ -942,16 +1058,23 @@ class FFMpegManager:
                         output_file
                     ]
                     
-                    result = subprocess.run(extract_cmd, capture_output=True, text=True, timeout=30)
+                    print(f"\nDEBUG: Executando concatenação final")
+                    print(f"  Comando: {' '.join(extract_cmd)}")
+                    print(f"  Output: {output_file}")
+                    
+                    result = subprocess.run(extract_cmd, capture_output=True, text=True, timeout=90)
+                    print(f"DEBUG: Resultado concatenação - returncode: {result.returncode}")
                     
                 finally:
                     # Remove arquivos temporários
+                    print(f"\nDEBUG: Limpando arquivos temporários")
                     for temp_file in [temp_prev, temp_curr, concat_list]:
                         try:
                             if os.path.exists(temp_file):
+                                print(f"  Removendo: {temp_file}")
                                 os.remove(temp_file)
-                        except:
-                            pass
+                        except Exception as e:
+                            print(f"  Erro ao remover {temp_file}: {e}")
                     
             elif needs_concatenation and next_file:
                 # CENÁRIO 2: Evento muito tarde - precisa arquivo atual + arquivo SEGUINTE
@@ -965,7 +1088,7 @@ class FFMpegManager:
                 try:
                     # Parte 1: do offset até o final do primeiro arquivo
                     cmd_part1 = ["ffmpeg", "-y", "-i", target_file, "-ss", str(offset_seconds), "-c:v", "copy", temp_part1]
-                    result1 = subprocess.run(cmd_part1, capture_output=True, text=True, timeout=30)
+                    result1 = subprocess.run(cmd_part1, capture_output=True, text=True, timeout=90)
                     if result1.returncode != 0:
                         print(f"ERRO ao extrair parte 1: {result1.stderr}")
                         return False
@@ -973,7 +1096,7 @@ class FFMpegManager:
                     # Parte 2: do início do próximo arquivo até completar a duração
                     remaining_duration = effective_duration - available_content
                     cmd_part2 = ["ffmpeg", "-y", "-i", next_file, "-t", str(remaining_duration), "-c:v", "copy", temp_part2]
-                    result2 = subprocess.run(cmd_part2, capture_output=True, text=True, timeout=30)
+                    result2 = subprocess.run(cmd_part2, capture_output=True, text=True, timeout=90)
                     if result2.returncode != 0:
                         print(f"ERRO ao extrair parte 2: {result2.stderr}")
                         return False
@@ -995,7 +1118,7 @@ class FFMpegManager:
                         output_file
                     ]
                     
-                    result = subprocess.run(extract_cmd, capture_output=True, text=True, timeout=30)
+                    result = subprocess.run(extract_cmd, capture_output=True, text=True, timeout=90)
                     
                 finally:
                     # Remove arquivos temporários

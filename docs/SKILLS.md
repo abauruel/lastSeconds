@@ -477,7 +477,6 @@ sudo ./cleanup_zombies.sh
 - [MONITORING.md](MONITORING.md) - Guia de monitoramento
 - [STREAMING_GUIDE.md](STREAMING_GUIDE.md) - Detalhes técnicos de streaming
 - [API_EXAMPLES.md](API_EXAMPLES.md) - Exemplos de uso da API
-- [SOLUÇÃO_KEYFRAMES.md](SOLUÇÃO_KEYFRAMES.md) - Troubleshooting keyframes
 
 ### Code Documentation
 - Inline comments em português
