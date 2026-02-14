@@ -120,7 +120,7 @@ class FFMpegManager:
             (
                 f"[f=flv:onfail=ignore]"
                 f"rtmp://localhost/live/{STREAM_NAME}|"
-                f"[f=segment:segment_time=60:segment_atclocktime=1:segment_clocktime_offset=0:reset_timestamps=1:avoid_negative_ts=make_zero:segment_format=mpegts:strftime=1:segment_wrap=18000]"
+                f"[f=segment:segment_time=60:segment_atclocktime=1:segment_clocktime_offset=0:reset_timestamps=1:avoid_negative_ts=make_zero:segment_format=mpegts:strftime=1:segment_wrap=1400]"
                 f"{DISK_DIR}/{PREFIX}_%Y%m%d_%H%M%S.ts"
             )
         ]
@@ -138,7 +138,7 @@ class FFMpegManager:
             (
                 f"[f=flv:onfail=ignore]"
                 f"rtmp://localhost/live/{STREAM_NAME}|"
-                f"[f=segment:segment_time=60:segment_atclocktime=1:segment_clocktime_offset=0:reset_timestamps=1:avoid_negative_ts=make_zero:segment_format=mp4:strftime=1:segment_wrap=18000]"
+                f"[f=segment:segment_time=60:segment_atclocktime=1:segment_clocktime_offset=0:reset_timestamps=1:avoid_negative_ts=make_zero:segment_format=mp4:strftime=1:segment_wrap=1400]"
                 f"{DISK_DIR}/{PREFIX}_%Y%m%d_%H%M%S.mp4"
             )
         ]
