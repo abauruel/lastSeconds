@@ -41,8 +41,11 @@ O sistema mantém duas câmeras gravando continuamente em segmentos de **1 minut
 - **[Guia de Streaming](docs/STREAMING_GUIDE.md)** - Como visualizar câmeras ao vivo (HLS/RTMP)
 - **[Acesso às Câmeras](docs/ACESSO_CAMERAS.md)** - Informações de acesso às câmeras
 - **[Diagnóstico de Streams](docs/DIAGNOSTICO_STREAMS.md)** - Troubleshooting de streaming
+- **[Enumeração Dinâmica de Câmeras](docs/CAMERA_DEVICE_ENUMERATION.md)** - ⭐ Solução para problema: câmera 2 não detectada
 
 ### 🔧 Manutenção e Troubleshooting
+- **[Correção de Câmeras Não Detectadas](CAMERA_DETECTION_FIX.md)** - Passo-a-passo para resolver video2→video3
+
 - **[Correção de Arquivos Corrompidos](docs/CORRUPTED_FILES_FIX.md)** - Como lidar com arquivos corrompidos
 - **[Skills](docs/SKILLS.md)** - Habilidades e capacidades do sistema
 

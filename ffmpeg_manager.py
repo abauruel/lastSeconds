@@ -47,27 +47,129 @@ class FFMpegManager:
     
     def detect_usb_cameras(self):
         """
-        Retorna os dispositivos fixos de câmera USB.
-        Sempre usa /dev/video0 e /dev/video2 como dispositivos primários.
+        Detecta dinamicamente os dispositivos de câmera USB.
+        NÃO assume números fixos (/dev/video0, /dev/video2, etc).
+        
+        Estratégia:
+        1. Executa v4l2-ctl --list-devices
+        2. Identifica blocos de câmeras USB (procura por "usb" no nome)
+        3. Para cada bloco, pega apenas o primeiro /dev/videoX (câmera principal)
+        4. Mapeia para índices 0 e 1
+        
+        Fallback: Se detectar < 2 câmeras, tenta dispositivos conhecidos (0,2) ou (0,3)
         """
         cameras = {}
         
-        # Configuração fixa dos dispositivos de vídeo
-        fixed_devices = {
-            0: '/dev/video0',  # stream1
-            1: '/dev/video2'   # stream2
-        }
-        
-        # Verifica se os dispositivos existem
-        for idx, device_path in fixed_devices.items():
-            if os.path.exists(device_path):
+        try:
+            # Tenta detecção dinâmica com v4l2-ctl
+            result = subprocess.run(
+                ["v4l2-ctl", "--list-devices"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            
+            # Processa output linha por linha
+            lines = result.stdout.split('\n')
+            usb_camera_devices = []
+            current_device_type = None
+            
+            for line in lines:
+                line_stripped = line.strip()
+                
+                # Identifica linhas que contêm "usb" (câmeras USB)
+                if 'usb' in line.lower() and ':' in line:
+                    # Nova câmera USB encontrada
+                    current_device_type = 'usb'
+                
+                # Se estamos em um bloco USB e encontramos /dev/video
+                if current_device_type == 'usb' and line_stripped.startswith('/dev/video'):
+                    device_path = line_stripped
+                    
+                    # Verifica se é um número válido e se o dispositivo existe
+                    try:
+                        video_num = int(device_path.split('video')[1])
+                        # Adiciona apenas o primeiro dispositivo de cada câmera USB
+                        # (ignora o background que vem depois, ex: video0, video1 -> pega apenas video0)
+                        if os.path.exists(device_path):
+                            usb_camera_devices.append(device_path)
+                            # Para esta câmera USB, vamos ignorar os próximos /dev/video da mesma câmera
+                            # (identificamos isso pelo padrão sequencial video0/1, video2/3, etc)
+                    except (ValueError, IndexError):
+                        pass
+                
+                # Reset quando sai de uma câmera USB
+                if current_device_type == 'usb' and line_stripped == '':
+                    current_device_type = None
+            
+            # Pega apenas as câmeras principais (primeira de cada par)
+            # Se temos video0/1 e video2/3, pega video0 e video2
+            main_cameras = []
+            seen_pairs = set()
+            
+            for device in usb_camera_devices:
+                try:
+                    video_num = int(device.split('video')[1])
+                    # Cada par (video0/1, video2/3, etc) tem uma câmera principal
+                    # Se é um número par, é câmera principal
+                    # Se é ímpar, é background (pula)
+                    if video_num % 2 == 0 and os.path.exists(device):
+                        main_cameras.append(device)
+                except (ValueError, IndexError):
+                    pass
+            
+            # Mapeia para índices 0 e 1
+            for idx, device_path in enumerate(main_cameras[:2]):  # Max 2 câmeras
                 cameras[idx] = device_path
-                print(f"Câmera {idx}: {device_path}")
-            else:
-                print(f"AVISO: Dispositivo {device_path} não encontrado!")
+                print(f"Câmera {idx}: {device_path} (detectada dinamicamente via USB)")
+            
+            # Se encontrou as 2 câmeras esperadas, retorna
+            if len(cameras) >= 2:
+                return cameras
+            
+            # Se não encontrou 2 câmeras, tenta fallback
+            if len(cameras) < 2:
+                print(f"⚠️  Encontradas apenas {len(cameras)} câmera(s), tentando fallback...")
+                raise Exception(f"Expected 2 cameras, found {len(cameras)}")
+                
+        except Exception as e:
+            print(f"Detecção USB falhou: {e}")
+            print("Tentando configuração de fallback com dispositivos fixos...")
+            
+            # Fallback 1: Tenta /dev/video0 e /dev/video2
+            fixed_devices = {
+                0: '/dev/video0',  # Primeira câmera
+                1: '/dev/video2'   # Segunda câmera
+            }
+            
+            for idx, device_path in fixed_devices.items():
+                if os.path.exists(device_path):
+                    cameras[idx] = device_path
+                    print(f"Câmera {idx}: {device_path} (fallback 1: fixo)")
+            
+            # Fallback 2: Se video2 não existe, procura video3 em diante
+            if 1 not in cameras:
+                print("⚠️  /dev/video2 não encontrado, procurando alternativas...")
+                for alt_video_num in range(3, 10):
+                    alt_device = f'/dev/video{alt_video_num}'
+                    if os.path.exists(alt_device):
+                        # Testa se é realmente uma câmera
+                        try:
+                            test = subprocess.run(
+                                ["v4l2-ctl", "-d", alt_device, "--list-formats"],
+                                capture_output=True,
+                                text=True,
+                                timeout=2
+                            )
+                            if test.returncode == 0 and "PixelFormat" in test.stdout:
+                                cameras[1] = alt_device
+                                print(f"Câmera 1: {alt_device} (fallback 2: alternativa)")
+                                break
+                        except Exception:
+                            pass
         
         if not cameras:
-            print("ERRO: Nenhum dispositivo de vídeo encontrado!")
+            print("❌ ERRO: Nenhum dispositivo de vídeo encontrado!")
         
         return cameras
 
