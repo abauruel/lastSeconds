@@ -3,3 +3,7 @@ __pycache__
 live
 *.mp4
 *.jpeg
+mediamtx.yml
+.env
+*.log
+*.db

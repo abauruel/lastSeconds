@@ -1,0 +1,58 @@
+rtsp: yes
+protocols: [udp, multicast, tcp]
+encryption: "no"
+rtspAddress: :8554
+rtspsAddress: :8322
+rtpAddress: :8000
+rtcpAddress: :8001
+multicastIPRange: 224.1.0.0/16
+multicastRTPPort: 8002
+multicastRTCPPort: 8003
+serverKey: server.key
+serverCert: server.crt
+authMethods: [basic]
+rtmp: yes
+rtmpAddress: :1935
+rtmpEncryption: "no"
+
+# Configuração dos paths (streams)
+paths:
+  # Stream 1 - Câmera RTSP 1
+  # As câmeras enviam H265/HEVC que pode não ser suportado em todos os navegadores
+  # Para melhor compatibilidade, configure as câmeras para enviar H264
+  stream1:
+    source: rtsp://user:password@192.168.1.101/stream1
+    sourceProtocol: tcp
+    sourceOnDemand: yes
+    runOnDemand: ""
+    runOnDemandRestart: no
+    
+  # Stream 2 - Câmera RTSP 2
+  stream2:
+    source: rtsp://user:password@192.168.1.65/live/0/SUB
+    sourceProtocol: tcp
+    sourceOnDemand: yes
+    runOnDemand: ""
+    runOnDemandRestart: no
+  
+  # Mantendo os paths antigos para compatibilidade (para publicação manual)
+  live/stream1:
+    source: publisher
+  live/stream2:
+    source: publisher
+
+hls: yes
+hlsAddress: ":8888"
+hlsEncryption: no
+hlsServerKey: server.key
+hlsServerCert: server.crt
+hlsAlwaysRemux: no
+hlsVariant: lowLatency
+hlsSegmentCount: 7
+hlsSegmentDuration: 1s
+hlsPartDuration: 200ms
+hlsSegmentMaxSize: 50M
+hlsAllowOrigin: '*'
+hlsDirectory: '/tmp'
+writeQueueSize: 8192
+logDestinations: [stdout]

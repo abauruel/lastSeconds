@@ -240,22 +240,35 @@ class FFMpegManager:
             )
         ]
         cmd_rtsp = [
-            "ffmpeg", "-rtbufsize","256M",
-	    "-hide_banner","-loglevel","error","-report","-benchmark_all","-stats_period","5",
-	    "-fflags", "+genpts",
+            "ffmpeg",
+            # Buffer e protocolo RTSP otimizado
+            "-rtsp_transport", "tcp",  # TCP é mais confiável que UDP
+            "-rtbufsize", "512M",  # Buffer maior para evitar perda de pacotes
+            "-max_delay", "500000",  # 500ms de delay máximo
+            "-hide_banner", "-loglevel", "error",
+            # "-report", "-benchmark_all", "-stats_period", "5",  # Descomente para debug
+            # Flags de entrada
+            "-fflags", "+genpts+discardcorrupt",
+            "-analyzeduration", "5000000",  # 5s para analisar stream
+            "-probesize", "10000000",  # 10MB para detectar propriedades
             "-i", f"{DEVICE}",
-            "-use_wallclock_as_timestamps", "1", "-fps_mode", "vfr",
-            "-force_key_frames", "expr:gte(t,n_forced*2)",  # Força keyframes a cada 2s
+            # Timestamps e modo de frame
+            "-use_wallclock_as_timestamps", "1",
+            "-fps_mode", "passthrough",  # Mantém FPS original do stream
+            # Mapeamento e codec (copy preserva qualidade original)
             "-map", "0:v",
             "-c:v", "copy",
-            "-ignore_io_errors", "1",
-            "-f", "tee",
-            (
-                f"[f=flv:onfail=ignore]"
-                f"rtmp://localhost/live/{STREAM_NAME}|"
-                f"[f=segment:segment_time=60:segment_atclocktime=1:segment_clocktime_offset=0:reset_timestamps=1:avoid_negative_ts=make_zero:segment_format=mp4:strftime=1:segment_wrap=1400]"
-                f"{DISK_DIR}/{PREFIX}_%Y%m%d_%H%M%S.mp4"
-            )
+            # Segmentos para gravação
+            "-f", "segment",
+            "-segment_time", "60",
+            "-segment_atclocktime", "1",
+            "-segment_clocktime_offset", "0",
+            "-reset_timestamps", "1",
+            "-avoid_negative_ts", "make_zero",
+            "-segment_format", "mpegts",
+            "-strftime", "1",
+            "-segment_wrap", "1400",
+            f"{DISK_DIR}/{PREFIX}_%Y%m%d_%H%M%S.ts"
         ]
 
         """Inicia os processos ffmpeg com buffer circular."""
