@@ -1,8 +1,10 @@
 import axios from "axios"
-import { useEffect, useRef, useState } from "react"
-import { Route, useNavigate } from "react-router"
-import Hls from 'hls.js'
+import { useState } from "react"
+import { useNavigate } from "react-router"
 import { useRecording } from "./context/RecordingContext";
+import VideoFeed from "./components/VideoFeed";
+import { STREAM1_URL, STREAM2_URL, BACKEND_URL } from "./config";
+
 
 export function Configure() {
   const { isRecording, setIsRecording } = useRecording();
@@ -11,10 +13,8 @@ export function Configure() {
   // const [isRecording, setIsRecording] = useState(false)
   const [isBuffering, setIsBuffering] = useState(false)
 
-  const videoRef1 = useRef<HTMLVideoElement>(null)
-  const videoRef2 = useRef<HTMLVideoElement>(null)
-  const [imgSrc1, setImagSrc1] = useState("http://bettersecond.local:8888/live/stream1/stream.m3u8")
-  const [imgSrc2, setImagSrc2] = useState("http://bettersecond.local:8888/live/stream2/stream.m3u8")
+  const [imgSrc1, setImagSrc1] = useState(STREAM1_URL)
+  const [imgSrc2, setImagSrc2] = useState(STREAM2_URL)
 
 
   const navigate = useNavigate()
@@ -37,14 +37,14 @@ export function Configure() {
   async function handleRecord() {
     setIsRecording(true)
 
-    await axios.post("http://bettersecond.local:5000/start")
+    await axios.post(`${BACKEND_URL}/start`)
 
   }
 
   async function handleStopRecord() {
     setIsRecording(false);
 
-    await axios.post("http://bettersecond.local:5000/stop")
+    await axios.post(`${BACKEND_URL}/stop`)
   }
 
   async function handleCleanBuffers() {
@@ -52,44 +52,18 @@ export function Configure() {
     if (!answer) {
       return
     } else {
-      await axios.post("http://bettersecond.local:5000/clear_buffers")
+      await axios.post(`${BACKEND_URL}/clear_buffers`)
     }
   }
 
   async function handleRegisterBuffer() {
-    await axios.post("http://bettersecond.local:5000/record")
+    await axios.post(`${BACKEND_URL}/record`)
   }
 
-  useEffect(() => {
-    if (Hls.isSupported()) {
-      const hls1 = new Hls()
-      const hls2 = new Hls()
-
-      hls1.on(Hls.Events.ERROR, (event, data) => {
-        console.error('HLS Error (Stream 1):', data)
-      })
-
-      hls2.on(Hls.Events.ERROR, (event, data) => {
-        console.error('HLS Error (Stream 2):', data)
-      })
+  // Removido: VideoFeed já gerencia o HLS automaticamente
 
 
-      if (videoRef1.current) {
-        hls1.loadSource(imgSrc1)
-        hls1.attachMedia(videoRef1.current)
-      }
 
-      if (videoRef2.current) {
-        hls2.loadSource(imgSrc2)
-        hls2.attachMedia(videoRef2.current)
-      }
-
-      return () => {
-        hls1.destroy()
-        hls2.destroy()
-      }
-    }
-  }, [imgSrc1, imgSrc2])
 
   return (
     <>
@@ -98,8 +72,8 @@ export function Configure() {
       <br />
 
       <div className='flex flex-row flex-wrap gap-1'>
-        <video ref={videoRef1} autoPlay playsInline className='w-96 -scale-x-100' />
-        <video ref={videoRef2} autoPlay playsInline className='w-96 -scale-x-100' />
+        <VideoFeed src={imgSrc1} />
+        <VideoFeed src={imgSrc2} />
       </div>
 
       {!enableCamera && (
@@ -117,6 +91,7 @@ export function Configure() {
             <button className="bg-red-500 flex items-center" onClick={handleCleanBuffers}> Limpar buffers</button>
           </div>
           <a className="mt-2 " href="/records">minhas gravações</a>
+
         </div>
       )}
     </>
