@@ -143,61 +143,92 @@ def init_status_routes():
                 health_data["streams"]["stream2"] = {"error": str(e)}
                 health_data["issues"].append(f"Failed to check Stream2: {str(e)}")
             
-            # 5. Verifica câmeras USB (detecta dinamicamente, filtrando apenas USB)
+            # 5. Verifica câmeras (USB ou RTSP)
+            # Detecta se está usando RTSP via variáveis de ambiente
+            use_rtsp = bool(os.environ.get('CAMERA_0_RTSP_URL', '').startswith('rtsp://') or 
+                           os.environ.get('CAMERA_1_RTSP_URL', '').startswith('rtsp://'))
+            
             try:
-                result = subprocess.run(
-                    ["v4l2-ctl", "--list-devices"],
-                    capture_output=True,
-                    text=True,
-                    timeout=5
-                )
-                
-                # Processa output para identificar apenas câmeras USB
-                lines = result.stdout.split('\n')
-                usb_cameras = []
-                current_device_type = None
-                
-                for line in lines:
-                    line_stripped = line.strip()
+                if use_rtsp:
+                    # Modo RTSP - verifica URLs configuradas
+                    camera_0_url = os.environ.get('CAMERA_0_RTSP_URL', '')
+                    camera_1_url = os.environ.get('CAMERA_1_RTSP_URL', '')
                     
-                    # Identifica linhas que contêm "usb" (câmeras USB)
-                    if 'usb' in line.lower() and ':' in line:
-                        current_device_type = 'usb'
+                    rtsp_cameras = []
+                    if camera_0_url.startswith('rtsp://'):
+                        rtsp_cameras.append("Camera 0: " + camera_0_url)
+                    if camera_1_url.startswith('rtsp://'):
+                        rtsp_cameras.append("Camera 1: " + camera_1_url)
                     
-                    # Se estamos em um bloco USB e encontramos /dev/video
-                    if current_device_type == 'usb' and line_stripped.startswith('/dev/video'):
-                        device_path = line_stripped
-                        if os.path.exists(device_path):
-                            try:
-                                video_num = int(device_path.split('video')[1])
-                                # Adiciona apenas números pares (câmeras principais, não background)
-                                if video_num % 2 == 0:
-                                    usb_cameras.append(device_path)
-                            except (ValueError, IndexError):
-                                pass
+                    health_data["cameras"]["mode"] = "RTSP"
+                    health_data["cameras"]["detected"] = rtsp_cameras
+                    health_data["cameras"]["count"] = len(rtsp_cameras)
+                    health_data["cameras"]["details"] = {
+                        "camera_0": camera_0_url if camera_0_url else "NOT CONFIGURED",
+                        "camera_1": camera_1_url if camera_1_url else "NOT CONFIGURED"
+                    }
                     
-                    # Reset quando sai de um bloco USB
-                    if current_device_type == 'usb' and line_stripped == '':
-                        current_device_type = None
-                
-                # Ordena para manter consistência
-                usb_cameras = sorted(usb_cameras)
-                
-                health_data["cameras"]["detected"] = usb_cameras
-                health_data["cameras"]["count"] = len(usb_cameras)
-                
-                # Informações detalhadas sobre cada câmera
-                health_data["cameras"]["details"] = {
-                    "camera_0": usb_cameras[0] if len(usb_cameras) > 0 else "NOT FOUND",
-                    "camera_1": usb_cameras[1] if len(usb_cameras) > 1 else "NOT FOUND"
-                }
-                
-                # Verifica se tem as 2 câmeras esperadas
-                if len(usb_cameras) < 2:
-                    health_data["issues"].append(
-                        f"Only {len(usb_cameras)} camera(s) detected, expected 2. "
-                        f"Found: {usb_cameras}"
+                    # Em modo RTSP, não é erro não ter câmeras USB
+                    if len(rtsp_cameras) < 2:
+                        health_data["issues"].append(
+                            f"Only {len(rtsp_cameras)} RTSP camera(s) configured, expected 2"
+                        )
+                else:
+                    # Modo USB - detecção original
+                    result = subprocess.run(
+                        ["v4l2-ctl", "--list-devices"],
+                        capture_output=True,
+                        text=True,
+                        timeout=5
                     )
+                    
+                    # Processa output para identificar apenas câmeras USB
+                    lines = result.stdout.split('\n')
+                    usb_cameras = []
+                    current_device_type = None
+                    
+                    for line in lines:
+                        line_stripped = line.strip()
+                        
+                        # Identifica linhas que contêm "usb" (câmeras USB)
+                        if 'usb' in line.lower() and ':' in line:
+                            current_device_type = 'usb'
+                        
+                        # Se estamos em um bloco USB e encontramos /dev/video
+                        if current_device_type == 'usb' and line_stripped.startswith('/dev/video'):
+                            device_path = line_stripped
+                            if os.path.exists(device_path):
+                                try:
+                                    video_num = int(device_path.split('video')[1])
+                                    # Adiciona apenas números pares (câmeras principais, não background)
+                                    if video_num % 2 == 0:
+                                        usb_cameras.append(device_path)
+                                except (ValueError, IndexError):
+                                    pass
+                        
+                        # Reset quando sai de um bloco USB
+                        if current_device_type == 'usb' and line_stripped == '':
+                            current_device_type = None
+                    
+                    # Ordena para manter consistência
+                    usb_cameras = sorted(usb_cameras)
+                    
+                    health_data["cameras"]["mode"] = "USB"
+                    health_data["cameras"]["detected"] = usb_cameras
+                    health_data["cameras"]["count"] = len(usb_cameras)
+                    
+                    # Informações detalhadas sobre cada câmera
+                    health_data["cameras"]["details"] = {
+                        "camera_0": usb_cameras[0] if len(usb_cameras) > 0 else "NOT FOUND",
+                        "camera_1": usb_cameras[1] if len(usb_cameras) > 1 else "NOT FOUND"
+                    }
+                    
+                    # Verifica se tem as 2 câmeras esperadas
+                    if len(usb_cameras) < 2:
+                        health_data["issues"].append(
+                            f"Only {len(usb_cameras)} USB camera(s) detected, expected 2. "
+                            f"Found: {usb_cameras}"
+                        )
                     health_data["status"] = "unhealthy"
                     
             except Exception as e:
