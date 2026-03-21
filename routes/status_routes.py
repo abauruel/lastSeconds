@@ -73,71 +73,87 @@ def init_status_routes():
             except Exception as e:
                 health_data["issues"].append(f"Failed to check zombie processes: {str(e)}")
             
-            # 3. Verifica Stream1
-            stream1_dir = "/media/pi/usb64gb/bts/stream1"
+            # 3. Verifica Stream1 (RAM disk primeiro, depois pendrive)
+            stream1_ram = "/dev/shm/bts/stream1"
+            stream1_usb = "/media/pi/usb64gb/bts/stream1"
             try:
-                if os.path.exists(stream1_dir):
-                    files = [f for f in os.listdir(stream1_dir) 
-                            if f.startswith("video0") and f.endswith(".ts")]
+                # Tenta primeiro no RAM disk (onde FFmpeg está gravando)
+                check_dirs = [(stream1_ram, "RAM"), (stream1_usb, "USB")]
+                latest_file = None
+                latest_source = None
+                
+                for check_dir, source in check_dirs:
+                    if os.path.exists(check_dir):
+                        files = [f for f in os.listdir(check_dir) 
+                                if f.startswith("video0") and f.endswith(".ts")]
+                        if files:
+                            candidate = max([os.path.join(check_dir, f) for f in files], 
+                                          key=os.path.getmtime)
+                            if latest_file is None or os.path.getmtime(candidate) > os.path.getmtime(latest_file):
+                                latest_file = candidate
+                                latest_source = source
+                
+                if latest_file:
+                    file_age = time.time() - os.path.getmtime(latest_file)
+                    file_size = os.path.getsize(latest_file)
                     
-                    if files:
-                        latest_file = max([os.path.join(stream1_dir, f) for f in files], 
-                                        key=os.path.getmtime)
-                        file_age = time.time() - os.path.getmtime(latest_file)
-                        file_size = os.path.getsize(latest_file)
-                        
-                        health_data["streams"]["stream1"] = {
-                            "latest_file": os.path.basename(latest_file),
-                            "file_age_seconds": int(file_age),
-                            "file_size_bytes": file_size,
-                            "recording": file_age < 120
-                        }
-                        
-                        if file_age > 300:
-                            health_data["issues"].append(f"Stream1 last file is {int(file_age)}s old (>5min)")
-                            health_data["status"] = "unhealthy"
-                    else:
-                        health_data["streams"]["stream1"] = {"error": "No files found"}
-                        health_data["issues"].append("Stream1 has no video files")
+                    health_data["streams"]["stream1"] = {
+                        "latest_file": os.path.basename(latest_file),
+                        "file_age_seconds": int(file_age),
+                        "file_size_bytes": file_size,
+                        "recording": file_age < 120,
+                        "source": latest_source
+                    }
+                    
+                    if file_age > 300:
+                        health_data["issues"].append(f"Stream1 last file is {int(file_age)}s old (>5min)")
                         health_data["status"] = "unhealthy"
                 else:
-                    health_data["streams"]["stream1"] = {"error": "Directory not found"}
-                    health_data["issues"].append("Stream1 directory does not exist")
+                    health_data["streams"]["stream1"] = {"error": "No files found"}
+                    health_data["issues"].append("Stream1 has no video files")
                     health_data["status"] = "unhealthy"
             except Exception as e:
                 health_data["streams"]["stream1"] = {"error": str(e)}
                 health_data["issues"].append(f"Failed to check Stream1: {str(e)}")
             
-            # 4. Verifica Stream2
-            stream2_dir = "/media/pi/usb64gb/bts/stream2"
+            # 4. Verifica Stream2 (RAM disk primeiro, depois pendrive)
+            stream2_ram = "/dev/shm/bts/stream2"
+            stream2_usb = "/media/pi/usb64gb/bts/stream2"
             try:
-                if os.path.exists(stream2_dir):
-                    files = [f for f in os.listdir(stream2_dir) 
-                            if f.startswith("video2") and f.endswith(".ts")]
+                # Tenta primeiro no RAM disk (onde FFmpeg está gravando)
+                check_dirs = [(stream2_ram, "RAM"), (stream2_usb, "USB")]
+                latest_file = None
+                latest_source = None
+                
+                for check_dir, source in check_dirs:
+                    if os.path.exists(check_dir):
+                        files = [f for f in os.listdir(check_dir) 
+                                if f.startswith("video2") and f.endswith(".ts")]
+                        if files:
+                            candidate = max([os.path.join(check_dir, f) for f in files], 
+                                          key=os.path.getmtime)
+                            if latest_file is None or os.path.getmtime(candidate) > os.path.getmtime(latest_file):
+                                latest_file = candidate
+                                latest_source = source
+                
+                if latest_file:
+                    file_age = time.time() - os.path.getmtime(latest_file)
+                    file_size = os.path.getsize(latest_file)
                     
-                    if files:
-                        latest_file = max([os.path.join(stream2_dir, f) for f in files], 
-                                        key=os.path.getmtime)
-                        file_age = time.time() - os.path.getmtime(latest_file)
-                        file_size = os.path.getsize(latest_file)
-                        
-                        health_data["streams"]["stream2"] = {
-                            "latest_file": os.path.basename(latest_file),
-                            "file_age_seconds": int(file_age),
-                            "file_size_bytes": file_size,
-                            "recording": file_age < 120
-                        }
-                        
-                        if file_age > 300:
-                            health_data["issues"].append(f"Stream2 last file is {int(file_age)}s old (>5min)")
-                            health_data["status"] = "unhealthy"
-                    else:
-                        health_data["streams"]["stream2"] = {"error": "No files found"}
-                        health_data["issues"].append("Stream2 has no video files")
+                    health_data["streams"]["stream2"] = {
+                        "latest_file": os.path.basename(latest_file),
+                        "file_age_seconds": int(file_age),
+                        "file_size_bytes": file_size,
+                        "recording": file_age < 120,
+                        "source": latest_source
+                    }
+                    
+                    if file_age > 300:
+                        health_data["issues"].append(f"Stream2 last file is {int(file_age)}s old (>5min)")
                         health_data["status"] = "unhealthy"
                 else:
-                    health_data["streams"]["stream2"] = {"error": "Directory not found"}
-                    health_data["issues"].append("Stream2 directory does not exist")
+                    health_data["streams"]["stream2"] = {"error": "No files found"}
+                    health_data["issues"].append("Stream2 has no video files")
                     health_data["status"] = "unhealthy"
             except Exception as e:
                 health_data["streams"]["stream2"] = {"error": str(e)}
@@ -148,20 +164,60 @@ def init_status_routes():
             use_rtsp = bool(os.environ.get('CAMERA_0_RTSP_URL', '').startswith('rtsp://') or 
                            os.environ.get('CAMERA_1_RTSP_URL', '').startswith('rtsp://'))
             
+            # Função auxiliar para testar conectividade RTSP
+            def test_rtsp_connectivity(rtsp_url, timeout=3):
+                """Testa se uma URL RTSP está acessível"""
+                try:
+                    import socket
+                    import re
+                    # Extrai host e porta da URL RTSP
+                    match = re.search(r'rtsp://(?:[^@]+@)?([^:/]+)(?::(\d+))?', rtsp_url)
+                    if not match:
+                        return False
+                    host = match.group(1)
+                    port = int(match.group(2)) if match.group(2) else 554
+                    
+                    # Testa conexão TCP na porta RTSP
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    sock.settimeout(timeout)
+                    result = sock.connect_ex((host, port))
+                    sock.close()
+                    return result == 0
+                except Exception:
+                    return False
+            
             try:
                 if use_rtsp:
-                    # Modo RTSP - verifica URLs configuradas
+                    # Modo RTSP - verifica URLs configuradas e testa conectividade
                     camera_0_url = os.environ.get('CAMERA_0_RTSP_URL', '')
                     camera_1_url = os.environ.get('CAMERA_1_RTSP_URL', '')
                     
                     rtsp_cameras = []
+                    camera_status = {}
+                    
                     if camera_0_url.startswith('rtsp://'):
+                        is_reachable = test_rtsp_connectivity(camera_0_url)
                         rtsp_cameras.append("Camera 0: " + camera_0_url)
+                        camera_status["camera_0"] = {
+                            "url": camera_0_url,
+                            "reachable": is_reachable
+                        }
+                        if not is_reachable:
+                            health_data["issues"].append("Camera 0 RTSP not reachable")
+                    
                     if camera_1_url.startswith('rtsp://'):
+                        is_reachable = test_rtsp_connectivity(camera_1_url)
                         rtsp_cameras.append("Camera 1: " + camera_1_url)
+                        camera_status["camera_1"] = {
+                            "url": camera_1_url,
+                            "reachable": is_reachable
+                        }
+                        if not is_reachable:
+                            health_data["issues"].append("Camera 1 RTSP not reachable")
                     
                     health_data["cameras"]["mode"] = "RTSP"
                     health_data["cameras"]["detected"] = rtsp_cameras
+                    health_data["cameras"]["status"] = camera_status
                     health_data["cameras"]["count"] = len(rtsp_cameras)
                     health_data["cameras"]["details"] = {
                         "camera_0": camera_0_url if camera_0_url else "NOT CONFIGURED",
@@ -229,7 +285,7 @@ def init_status_routes():
                             f"Only {len(usb_cameras)} USB camera(s) detected, expected 2. "
                             f"Found: {usb_cameras}"
                         )
-                    health_data["status"] = "unhealthy"
+                        health_data["status"] = "unhealthy"
                     
             except Exception as e:
                 health_data["cameras"]["error"] = str(e)
