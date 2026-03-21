@@ -19,6 +19,7 @@ Documentação completa do sistema de gravação por eventos.
 - **[Acesso às Câmeras](ACESSO_CAMERAS.md)** - Informações de acesso às câmeras
 - **[Diagnóstico de Streams](DIAGNOSTICO_STREAMS.md)** - Troubleshooting de streaming
 - **[Streaming Health Fix](STREAMING_HEALTH_FIX.md)** - Correções de problemas de streaming
+- **[Configuração DHCP](DHCP_CONFIGURATION.md)** - Servidor DHCP para câmeras IP
 
 ### 💻 Desenvolvimento
 - **[Exemplos de API](API_EXAMPLES.md)** - Exemplos de uso da API REST
