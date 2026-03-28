@@ -19,7 +19,7 @@ def create_app(ffmpeg_manager):
 
     # Inicializa e registra os blueprints
     app.register_blueprint(init_ffmpeg_routes(ffmpeg_manager))
-    app.register_blueprint(init_status_routes())
+    app.register_blueprint(init_status_routes(ffmpeg_manager))
     
     # TODO: LED manager será inicializado apenas no worker principal
     # Comentado temporariamente para evitar conflitos entre workers

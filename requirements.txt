@@ -21,14 +21,17 @@ requests==2.31.0
 # Tarefas agendadas
 schedule==1.2.0
 
+# Áudio
+pygame>=2.6.0
+
 # ========================================
 # Hardware Raspberry Pi (Opcional)
 # ========================================
 
-# GPIO - Descomente se usar botões/LEDs GPIO
+# GPIO - Removido do projeto (não há mais botão físico)
 # RPi.GPIO==0.7.1
 
-# LEDs WS281x - Descomente se usar LEDs endereçáveis
+# LEDs WS281x - Removido do projeto
 # rpi-ws281x==5.0.0
 
 # Bluetooth BLE - Descomente se usar controle BLE

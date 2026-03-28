@@ -1,11 +1,8 @@
 import os
 from flask import Flask, jsonify
-from gpio_config import setup_gpio, cleanup_gpio
 from ffmpeg_manager import FFMpegManager
-from gpio_button import register_button_callback
 from routes import create_app
 # from temperature_monitor import start_temperature_monitoring, stop_temperature_monitoring  # Desativado
-# from led_ws281x_new import blink_n_times, cleanup, start_blinking
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -27,9 +24,6 @@ os.makedirs(STREAM_DIR, exist_ok=True)
 
 os.makedirs("/tmp/buffers/video0", exist_ok=True)
 os.makedirs("/tmp/buffers/video2", exist_ok=True)
-
-# Inicializa o Flask e o GPIO
-GPIO = setup_gpio()
 
 # Inicializa o gerenciador de ffmpeg
 ffmpeg_manager = FFMpegManager(BUFFER_DIR_VIDEO0, BUFFER_DIR_VIDEO2, FINAL_DIR, STREAM_DIR)

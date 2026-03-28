@@ -7,7 +7,7 @@ from datetime import datetime
 # Cria um blueprint para as rotas de status
 status_bp = Blueprint('status', __name__)
 
-def init_status_routes():
+def init_status_routes(ffmpeg_manager=None):
     """Inicializa as rotas relacionadas ao status."""
 
     @status_bp.route('/status', methods=['GET'])
@@ -452,6 +452,96 @@ def init_status_routes():
             return jsonify({
                 "status": "error",
                 "message": f"Erro ao processar requisição: {str(e)}"
+            }), 500
+
+    @status_bp.route('/shutdown', methods=['POST'])
+    def shutdown():
+        """
+        Endpoint para desligar o Raspberry Pi com segurança.
+        
+        Realiza:
+        1. Para os processos FFmpeg gracefully
+        2. Sincroniza dados do disco
+        3. Executa shutdown do sistema
+        
+        Retorna confirmação antes do shutdown ser executado.
+        """
+        try:
+            data = request.get_json() or {}
+            delay_seconds = data.get('delay', 10)  # Delay padrão de 10 segundos
+            
+            # Valida delay
+            if not isinstance(delay_seconds, int) or delay_seconds < 0 or delay_seconds > 300:
+                return jsonify({
+                    "status": "error",
+                    "message": "delay deve ser um inteiro entre 0 e 300 segundos"
+                }), 400
+            
+            print("🔴 SHUTDOWN SOLICITADO via API")
+            print(f"   Delay: {delay_seconds} segundos")
+            
+            response_data = {
+                "status": "success",
+                "message": "Shutdown iniciado com sucesso",
+                "timestamp": datetime.now().isoformat(),
+                "delay_seconds": delay_seconds,
+                "steps": []
+            }
+            
+            # Passo 1: Para os processos FFmpeg
+            if ffmpeg_manager:
+                try:
+                    print("   Passo 1/3: Parando processos FFmpeg...")
+                    ffmpeg_manager.stop_ffmpeg_processes()
+                    response_data["steps"].append("FFmpeg processes stopped")
+                    print("   ✓ Processos FFmpeg parados")
+                except Exception as e:
+                    error_msg = f"Erro ao parar FFmpeg: {str(e)}"
+                    print(f"   ✗ {error_msg}")
+                    response_data["steps"].append(error_msg)
+            else:
+                response_data["steps"].append("FFmpeg manager not available (skipped)")
+            
+            # Passo 2: Sincroniza dados do disco
+            try:
+                print("   Passo 2/3: Sincronizando dados do disco...")
+                subprocess.run(["sync"], check=True, timeout=10)
+                response_data["steps"].append("Disk data synchronized")
+                print("   ✓ Dados sincronizados")
+            except Exception as e:
+                error_msg = f"Erro ao sincronizar disco: {str(e)}"
+                print(f"   ✗ {error_msg}")
+                response_data["steps"].append(error_msg)
+            
+            # Passo 3: Agenda o shutdown
+            try:
+                print(f"   Passo 3/3: Agendando shutdown em {delay_seconds}s...")
+                
+                # Usa 'sudo shutdown' com delay
+                subprocess.Popen(
+                    ["sudo", "shutdown", "-h", f"+{int(delay_seconds/60) if delay_seconds >= 60 else 0}"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
+                
+                response_data["steps"].append(f"System shutdown scheduled in {delay_seconds}s")
+                print(f"   ✓ Shutdown agendado")
+                print("🔴 Sistema será desligado em {delay_seconds}s")
+                
+            except Exception as e:
+                error_msg = f"Erro ao executar shutdown: {str(e)}"
+                print(f"   ✗ {error_msg}")
+                response_data["status"] = "error"
+                response_data["steps"].append(error_msg)
+                return jsonify(response_data), 500
+            
+            return jsonify(response_data), 200
+            
+        except Exception as e:
+            print(f"✗ Erro no shutdown: {str(e)}")
+            return jsonify({
+                "status": "error",
+                "message": f"Erro ao processar shutdown: {str(e)}"
             }), 500
 
     return status_bp

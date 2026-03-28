@@ -1,0 +1,87 @@
+import pygame
+import threading
+import os
+
+# Inicializa o mixer uma vez no início
+try:
+    pygame.mixer.init(frequency=22050, size=-16, channels=2, buffer=512)
+    print("✓ Audio player inicializado")
+except Exception as e:
+    print(f"✗ Erro ao inicializar audio player: {e}")
+
+# Caminhos dos arquivos de áudio
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+AUDIO_DIR = os.path.join(BASE_DIR, "assets")
+GOAL_SOUND = os.path.join(AUDIO_DIR, "goal.mp3")
+START_SOUND = os.path.join(AUDIO_DIR, "comecou.mp3")
+
+# Lock para evitar sobreposição de áudios
+audio_lock = threading.Lock()
+
+def play_song(index, blocking=False):
+    """
+    Toca um arquivo de áudio.
+    
+    Args:
+        index (int): 1 para som de início, outro valor para som de gol
+        blocking (bool): Se True, bloqueia até o áudio terminar. Se False, toca em thread separada.
+    """
+    if blocking:
+        _play_audio_internal(index)
+    else:
+        # Executa em thread separada para não bloquear
+        thread = threading.Thread(target=_play_audio_internal, args=(index,), daemon=True)
+        thread.start()
+
+def _play_audio_internal(index):
+    """Função interna que toca o áudio."""
+    with audio_lock:
+        try:
+            # Seleciona o arquivo
+            if index == 1:
+                audio_file = START_SOUND
+                sound_name = "início"
+            else:
+                audio_file = GOAL_SOUND
+                sound_name = "gol"
+            
+            # Verifica se o arquivo existe
+            if not os.path.exists(audio_file):
+                print(f"⚠ Arquivo de áudio não encontrado: {audio_file}")
+                return
+            
+            # Para qualquer áudio que esteja tocando
+            pygame.mixer.music.stop()
+            
+            # Carrega e toca o novo áudio
+            pygame.mixer.music.load(audio_file)
+            pygame.mixer.music.set_volume(1.0)  # Volume máximo
+            pygame.mixer.music.play()
+            
+            print(f"🔊 Tocando som de {sound_name}...")
+            
+            # Espera até que o som termine (apenas se não estiver em thread)
+            # A thread será daemon, então não bloqueia o shutdown
+            while pygame.mixer.music.get_busy():
+                pygame.time.wait(100)
+            
+            print(f"✓ Som de {sound_name} finalizado")
+            
+        except Exception as e:
+            print(f"✗ Erro ao tocar áudio: {e}")
+
+def play_goal_sound():
+    """Atalho para tocar som de gol (não-bloqueante)."""
+    play_song(0, blocking=False)
+
+def play_start_sound():
+    """Atalho para tocar som de início (não-bloqueante)."""
+    play_song(1, blocking=False)
+
+def stop_audio():
+    """Para qualquer áudio que esteja tocando."""
+    try:
+        pygame.mixer.music.stop()
+        print("🔇 Áudio parado")
+    except Exception as e:
+        print(f"✗ Erro ao parar áudio: {e}")

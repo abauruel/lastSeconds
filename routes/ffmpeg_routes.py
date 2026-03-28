@@ -3,6 +3,8 @@ from database.models import Video, VideoStatus
 from database.db_config import SessionLocal
 import os
 import glob
+from audio_player import play_event_sound
+
 # Cria um blueprint para as rotas do ffmpeg
 ffmpeg_bp = Blueprint('ffmpeg', __name__)
 
@@ -32,6 +34,10 @@ def init_ffmpeg_routes(ffmpeg_manager):
         """Registra apenas o timestamp do evento da câmera 1"""
         data = request.get_json(silent=True, force=True) or {}
         duration = data.get('duration', 10)  # Padrão 10 segundos
+        
+        # Toca áudio de evento (não-bloqueante)
+        play_event_sound(blocking=False)
+        
         success = ffmpeg_manager.record_last_10_seconds(cam_id=0, duration=duration)
         if success:
             return jsonify({"status": "success", "message": f"Evento cam1 registrado (duração: {duration}s)"}), 200
@@ -42,6 +48,10 @@ def init_ffmpeg_routes(ffmpeg_manager):
         """Registra apenas o timestamp do evento da câmera 2"""
         data = request.get_json(silent=True, force=True) or {}
         duration = data.get('duration', 10)  # Padrão 10 segundos
+        
+        # Toca áudio de evento (não-bloqueante)
+        play_event_sound(blocking=False)
+        
         success = ffmpeg_manager.record_last_10_seconds(cam_id=1, duration=duration)
         if success:
             return jsonify({"status": "success", "message": f"Evento cam2 registrado (duração: {duration}s)"}), 200
