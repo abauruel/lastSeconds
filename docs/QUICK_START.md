@@ -171,7 +171,7 @@ sudo blkid /dev/sda1
 sudo nano /etc/fstab
 
 # Adicionar linha (substituir UUID):
-UUID=1234-5678 /media/pi/usb64gb ext4 defaults,nofail 0 2
+UUID=1234-5678 /media/pi/usb64gb ext4 defaults,nofail,noatime 0 2
 
 # Salvar (Ctrl+O, Enter, Ctrl+X)
 

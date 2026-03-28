@@ -2,7 +2,7 @@ import os
 import signal
 from datetime import datetime, timedelta
 import subprocess
-from led_ws281x_new import blink_n_times, cleanup, start_blinking
+# from led_ws281x_new import blink_n_times, cleanup, start_blinking  # LED removido do projeto
 import time
 from database import get_db, Video, VideoStatus
 import json
@@ -26,6 +26,9 @@ class FFMpegManager:
         
         # Mapeia device_number para o device path usado
         self.device_paths = {}  # {0: '/dev/video0', 1: '/dev/video2'}
+        
+        # Mapeia device_number para o tipo de input source ('usb' ou 'rtsp')
+        self.input_sources = {}  # {0: 'rtsp', 1: 'rtsp'}
         
         # Lock para operações no arquivo de timestamps
         self.timestamp_lock = threading.Lock()
@@ -174,6 +177,9 @@ class FFMpegManager:
         return cameras
 
     def start_ffmpeg_processes(self, device_number=0, input_source="usb", stream=""):
+        # Armazena o tipo de input source para esta câmera
+        self.input_sources[device_number] = input_source
+        
         # Se for USB, detecta as câmeras automaticamente
         if input_source == "usb":
             # Detecta câmeras apenas se ainda não foram detectadas ou se o cache está vazio
@@ -273,12 +279,12 @@ class FFMpegManager:
 
         """Inicia os processos ffmpeg com buffer circular."""
         if device_number == 0:
-            print("Iniciando ffmpeg para /dev/video0...")
+            print(f"Iniciando ffmpeg para device0 ({DEVICE})...")
             with open("/media/pi/usb64gb/bts/ffmpeg_device0.log", "a") as logfile:
                 cmd = cmd_usb if input_source == "usb" else cmd_rtsp
                 self.ffmpeg_process_0 = subprocess.Popen(cmd, preexec_fn=os.setsid, stdout=logfile, stderr=logfile)
         else:
-            print("Iniciando ffmpeg para /dev/video2...")
+            print(f"Iniciando ffmpeg para device1 ({DEVICE})...")
             with open("/media/pi/usb64gb/bts/ffmpeg_device2.log", "a") as logfile:
                 cmd = cmd_usb if input_source == "usb" else cmd_rtsp
                 self.ffmpeg_process_1 = subprocess.Popen(cmd, preexec_fn=os.setsid, stdout=logfile, stderr=logfile)
@@ -558,8 +564,9 @@ class FFMpegManager:
                 except Exception as e:
                     print(f"  ⚠ Erro ao verificar dispositivo: {e}")
                 
-                # Verifica se o dispositivo existe
-                if not os.path.exists(device_path):
+                # Verifica se o dispositivo existe (apenas para USB)
+                input_source = self.input_sources.get(device_number, "usb")
+                if input_source == "usb" and not os.path.exists(device_path):
                     print(f"❌ ERRO: Dispositivo {device_path} não existe! Câmera desconectada?")
                     # Tenta re-detectar as câmeras
                     print("🔍 Tentando re-detectar câmeras...")
@@ -600,18 +607,31 @@ class FFMpegManager:
 
         self.last_restart_attempt[device_number] = now
 
-        # Re-detecta câmeras
-        self.detected_cameras = self.detect_usb_cameras()
-        if device_number not in self.detected_cameras:
-            print(f"⚠️ Watchdog: Câmera {device_number} ausente. Aguardando reconexão...")
-            return
+        # Verifica qual é o input_source desta câmera
+        input_source = self.input_sources.get(device_number, "usb")
+        
+        # Se for USB, tenta re-detectar câmeras
+        if input_source == "usb":
+            # Re-detecta câmeras
+            self.detected_cameras = self.detect_usb_cameras()
+            if device_number not in self.detected_cameras:
+                print(f"⚠️ Watchdog: Câmera {device_number} ausente. Aguardando reconexão...")
+                return
 
-        device_path = self.detected_cameras[device_number]
-        self.device_paths[device_number] = device_path
+            device_path = self.detected_cameras[device_number]
+            self.device_paths[device_number] = device_path
 
-        # Inicia o processo se não estiver rodando
-        print(f"🔄 Watchdog: Iniciando device{device_number} ({device_path})...")
-        self.start_ffmpeg_processes(device_number=device_number, input_source="usb", stream=device_path)
+            # Inicia o processo se não estiver rodando
+            print(f"🔄 Watchdog: Iniciando device{device_number} ({device_path})...")
+            self.start_ffmpeg_processes(device_number=device_number, input_source="usb", stream=device_path)
+        else:
+            # Para RTSP, usa o device_path já armazenado
+            device_path = self.device_paths.get(device_number)
+            if device_path:
+                print(f"🔄 Watchdog: Iniciando device{device_number} (RTSP: {device_path})...")
+                self.start_ffmpeg_processes(device_number=device_number, input_source="rtsp", stream=device_path)
+            else:
+                print(f"⚠️ Watchdog: Câmera {device_number} RTSP não tem device_path configurado")
     
     def start_watchdog(self):
         """Inicia thread de monitoramento dos processos FFmpeg."""
@@ -731,17 +751,17 @@ class FFMpegManager:
             
             print(f"Evento registrado: cam_id={cam_id}, timestamp={current_time.isoformat()}")
             
-            # Feedback visual rápido
-            if cam_id == 0:
-                threading.Thread(target=lambda: [
-                    blink_n_times(color=(255, 0, 0), n=2, interval=0.1, direction="left"),
-                    cleanup()
-                ], daemon=True).start()
-            else:
-                threading.Thread(target=lambda: [
-                    blink_n_times(color=(0, 0, 255), n=2, interval=0.1, direction="right"),
-                    cleanup()
-                ], daemon=True).start()
+            # Feedback visual rápido - LED removido
+            # if cam_id == 0:
+            #     threading.Thread(target=lambda: [
+            #         blink_n_times(color=(255, 0, 0), n=2, interval=0.1, direction="left"),
+            #         cleanup()
+            #     ], daemon=True).start()
+            # else:
+            #     threading.Thread(target=lambda: [
+            #         blink_n_times(color=(0, 0, 255), n=2, interval=0.1, direction="right"),
+            #         cleanup()
+            #     ], daemon=True).start()
             
             return True
             

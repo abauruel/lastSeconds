@@ -360,7 +360,7 @@ Se o problema persistir após estas verificações:
 
 2. Execute health check completo:
    ```bash
-   /home/pi/app/check_health.sh > /tmp/health.txt
+   /home/pi/app/scripts/check_health.sh > /tmp/health.txt
    ```
 
 3. Compartilhe os arquivos `/tmp/*.log` e `/tmp/health.txt`

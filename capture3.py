@@ -4,7 +4,7 @@ from gpio_config import setup_gpio, cleanup_gpio
 from ffmpeg_manager import FFMpegManager
 from gpio_button import register_button_callback
 from routes import create_app
-from temperature_monitor import start_temperature_monitoring, stop_temperature_monitoring
+# from temperature_monitor import start_temperature_monitoring, stop_temperature_monitoring  # Desativado
 # from led_ws281x_new import blink_n_times, cleanup, start_blinking
 
 from dotenv import load_dotenv
@@ -53,13 +53,13 @@ if os.environ.get('SERVER_SOFTWARE', '').startswith('gunicorn'):
         ffmpeg_manager.start_ffmpeg_processes(1, "rtsp", CAMERA_1_RTSP_URL)
         # ffmpeg_manager.start_ffmpeg_processes(0,"rtsp", "rtsp://admin:123456@192.168.1.188/stream0")
         # ffmpeg_manager.start_ffmpeg_processes(1,"rtsp", "rtsp://admin:123456@192.168.1.188/stream1")
-        start_temperature_monitoring(BASE_DIR)
+        # start_temperature_monitoring(BASE_DIR)  # Desativado
 else:
     # Rodando diretamente (python capture3.py)
     print("🎥 Inicializando FFmpeg em modo standalone...")
     ffmpeg_manager.start_ffmpeg_processes(0, "rtsp", CAMERA_0_RTSP_URL)
     ffmpeg_manager.start_ffmpeg_processes(1, "rtsp", CAMERA_1_RTSP_URL)
-    start_temperature_monitoring(BASE_DIR)
+    # start_temperature_monitoring(BASE_DIR)  # Desativado
 
 # Função principal
 def main():
@@ -71,7 +71,7 @@ def main():
         app.run(host="0.0.0.0", port=5000)
     except KeyboardInterrupt:
         print("Encerrando aplicação...")
-        stop_temperature_monitoring()  # Parar o monitoramento de temperatura
+        # stop_temperature_monitoring()  # Parar o monitoramento de temperatura - Desativado
         ffmpeg_manager.stop_ffmpeg_processes()
         cleanup_gpio()
 

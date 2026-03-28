@@ -1,0 +1,42 @@
+# ========================================
+# Better Seconds Record - Dependências
+# ========================================
+
+# Framework Web
+Flask==3.0.0
+Werkzeug==3.0.1
+
+# Variáveis de ambiente
+python-dotenv==1.0.0
+
+# Servidor WSGI (Produção)
+gunicorn==21.2.0
+
+# Banco de Dados
+SQLAlchemy==2.0.36
+
+# HTTP Requests
+requests==2.31.0
+
+# Tarefas agendadas
+schedule==1.2.0
+
+# ========================================
+# Hardware Raspberry Pi (Opcional)
+# ========================================
+
+# GPIO - Descomente se usar botões/LEDs GPIO
+# RPi.GPIO==0.7.1
+
+# LEDs WS281x - Descomente se usar LEDs endereçáveis
+# rpi-ws281x==5.0.0
+
+# Bluetooth BLE - Descomente se usar controle BLE
+# bleak==0.21.1
+
+# ========================================
+# Observações
+# ========================================
+# - Execute: pip install -r requirements.txt
+# - Para instalar dependências opcionais, descomente as linhas correspondentes
+# - FFmpeg deve ser instalado via sistema: sudo apt install ffmpeg

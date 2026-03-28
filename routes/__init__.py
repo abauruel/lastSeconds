@@ -4,7 +4,7 @@ from routes.status_routes import init_status_routes
 from database import Base, engine
 
 
-import led_ws281x_new
+# import led_ws281x_new  # LED removido do projeto
 
 def init_db():
     """Initialize the database by creating all tables if they don't exist."""

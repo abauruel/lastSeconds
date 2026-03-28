@@ -30,7 +30,7 @@ O sistema mantém duas câmeras gravando continuamente em segmentos de **1 minut
 ### 🚀 Instalação e Configuração
 - **[Quick Start](docs/QUICK_START.md)** - ⭐ Guia completo de instalação do zero
 - **[Guia de Gravação em RAM](docs/RAM_RECORDING_GUIDE.md)** - Sistema de buffer em tmpfs e sincronização automática
-- **[Inicialização Automática](docs/AUTO_START_INFO.md)** - Configuração de auto-start após reboot
+- **[Inicialização Automática](docs/AUTO_START_INFO.md)** - ⭐ Serviço systemd para produção - auto-start após reboot
 
 ### 📊 Operação e Monitoramento
 - **[Monitoramento](docs/MONITORING.md)** - Ferramentas de monitoramento e health checks

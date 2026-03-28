@@ -1,3 +1,9 @@
+import sys
+import os
+
+# Adiciona o diretório pai ao path para permitir imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from database import Base, engine
 
 def init_db():
