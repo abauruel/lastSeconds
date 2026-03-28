@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, request
 import os
 import time
 import subprocess
@@ -357,5 +357,101 @@ def init_status_routes():
             status_code = 500  # Internal Server Error
         
         return jsonify(health_data), status_code
+
+    @status_bp.route('/update_time', methods=['POST'])
+    def update_time():
+        """
+        Endpoint para atualizar a hora do sistema.
+        
+        Recebe um JSON com:
+        - datetime: string no formato ISO 8601 (ex: "2026-03-28T14:30:00")
+          ou formato "YYYY-MM-DD HH:MM:SS"
+        
+        Exemplo de requisição:
+        POST /update_time
+        {
+            "datetime": "2026-03-28 14:30:00"
+        }
+        
+        Returns:
+            JSON com o status da operação e a nova hora do sistema
+        """
+        try:
+            data = request.get_json()
+            
+            if not data or 'datetime' not in data:
+                return jsonify({
+                    "status": "error",
+                    "message": "Campo 'datetime' é obrigatório"
+                }), 400
+            
+            datetime_str = data['datetime']
+            
+            # Tenta parsear a data para validar o formato
+            try:
+                # Aceita formato ISO 8601
+                if 'T' in datetime_str:
+                    dt = datetime.fromisoformat(datetime_str.replace('Z', '+00:00'))
+                    # Converte para o formato esperado pelo comando date
+                    date_format = dt.strftime('%Y-%m-%d %H:%M:%S')
+                else:
+                    # Valida formato YYYY-MM-DD HH:MM:SS
+                    dt = datetime.strptime(datetime_str, '%Y-%m-%d %H:%M:%S')
+                    date_format = datetime_str
+            except ValueError as e:
+                return jsonify({
+                    "status": "error",
+                    "message": f"Formato de data inválido. Use 'YYYY-MM-DD HH:MM:SS' ou ISO 8601. Erro: {str(e)}"
+                }), 400
+            
+            # Atualiza a hora do sistema usando o comando date
+            # Formato: date -s "YYYY-MM-DD HH:MM:SS"
+            try:
+                result = subprocess.run(
+                    ["sudo", "date", "-s", date_format],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                
+                if result.returncode == 0:
+                    # Sincroniza o hardware clock com o system clock
+                    subprocess.run(
+                        ["sudo", "hwclock", "-w"],
+                        capture_output=True,
+                        text=True,
+                        timeout=5
+                    )
+                    
+                    return jsonify({
+                        "status": "success",
+                        "message": "Hora do sistema atualizada com sucesso",
+                        "previous_datetime": datetime_str,
+                        "current_datetime": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                        "timestamp": datetime.now().isoformat()
+                    }), 200
+                else:
+                    return jsonify({
+                        "status": "error",
+                        "message": f"Falha ao atualizar hora do sistema: {result.stderr}",
+                        "returncode": result.returncode
+                    }), 500
+                    
+            except subprocess.TimeoutExpired:
+                return jsonify({
+                    "status": "error",
+                    "message": "Timeout ao executar comando de atualização da hora"
+                }), 500
+            except Exception as e:
+                return jsonify({
+                    "status": "error",
+                    "message": f"Erro ao executar comando: {str(e)}"
+                }), 500
+                
+        except Exception as e:
+            return jsonify({
+                "status": "error",
+                "message": f"Erro ao processar requisição: {str(e)}"
+            }), 500
 
     return status_bp

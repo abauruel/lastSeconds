@@ -2,7 +2,7 @@
 # script adiciona logo no canto inferior esquerdo dos videos.
 # Lista todos os arquivos mp4 da pasta
 DATA=$(date +%Y%m%d)
-cd recordings/streams/$DATA
+cd /media/pi/usb64gb/bts/streams/$DATA
 ls -l
 # Loop sobre cada arquivo mp4
 i=1

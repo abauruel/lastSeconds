@@ -4,9 +4,9 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 # Create the SQLAlchemy engine
 import os
 
-# Get the current directory (database folder)
-current_dir = os.path.dirname(os.path.abspath(__file__))
-DATABASE_URL = f"sqlite:///{os.path.join(current_dir, 'recordings.db')}"  # Store in database folder
+# Database stored on USB drive
+DATABASE_PATH = "/media/pi/usb64gb/bts/recordings.db"
+DATABASE_URL = f"sqlite:///{DATABASE_PATH}"
 engine = create_engine(DATABASE_URL)
 
 # Create a session factory

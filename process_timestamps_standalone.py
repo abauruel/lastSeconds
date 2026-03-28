@@ -62,7 +62,7 @@ def main():
     print()
     
     # Configurações de diretórios (mesmas do capture3.py)
-    BASE_DIR = "./recordings"
+    BASE_DIR = "/media/pi/usb64gb/bts"
     BUFFER_DIR = os.path.join(BASE_DIR, "buffers")
     FINAL_DIR = os.path.join(BASE_DIR, "recordings")
     STREAM_DIR = os.path.join(BASE_DIR, "streams")

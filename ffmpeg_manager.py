@@ -14,8 +14,8 @@ device_name="rpi4bmobile"
 
 class FFMpegManager:
     def __init__(self, buffer_dir_video0, buffer_dir_video2, final_dir, stream_dir):
-        self.buffer_dir_video0 = '/home/pi/app/recordings/buffers/video0'
-        self.buffer_dir_video2 = '/home/pi/app/recordings/buffers/video2'
+        self.buffer_dir_video0 = buffer_dir_video0
+        self.buffer_dir_video2 = buffer_dir_video2
         self.final_dir = final_dir
         self.stream_dir = stream_dir
         self.ffmpeg_process_0 = None
