@@ -1,17 +1,23 @@
 """
 Módulo para reprodução de áudio quando eventos são registrados.
 Usa paplay (PulseAudio) para reproduzir no dispositivo Bluetooth G200.
+Pré-processa os arquivos na inicialização para evitar corte no início.
 """
 import os
 import sys
 import threading
 import subprocess
+import time
 
 # Caminhos dos arquivos de áudio
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 AUDIO_DIR = os.path.join(BASE_DIR, "assets")
-GOAL_SOUND = os.path.join(AUDIO_DIR, "goodresult.mp3")
+GOAL_SOUND = os.path.join(AUDIO_DIR, "success.mp3")
 START_SOUND = os.path.join(AUDIO_DIR, "comecou.mp3")
+
+# Caminhos dos arquivos WAV pré-processados (amplificados)
+GOAL_SOUND_WAV = "/tmp/goal_amplified.wav"
+START_SOUND_WAV = "/tmp/start_amplified.wav"
 
 # Lock para evitar sobreposição de áudios
 audio_lock = threading.Lock()
@@ -30,6 +36,56 @@ except Exception as e:
     AUDIO_AVAILABLE = False
     sys.stderr.write(f"⚠ Audio player não disponível: {e}\n")
     sys.stderr.flush()
+
+def _preprocess_audio_files():
+    """
+    Pré-processa arquivos de áudio na inicialização.
+    Converte MP3 para WAV com amplificação para reprodução instantânea.
+    """
+    if not AUDIO_AVAILABLE:
+        return
+    
+    sys.stderr.write("🎵 Pré-processando arquivos de áudio...\n")
+    sys.stderr.flush()
+    
+    audio_files = [
+        (GOAL_SOUND, GOAL_SOUND_WAV, "evento"),
+        (START_SOUND, START_SOUND_WAV, "início")
+    ]
+    
+    for source, target, name in audio_files:
+        try:
+            if not os.path.exists(source):
+                sys.stderr.write(f"⚠ Arquivo {name} não encontrado: {source}\n")
+                sys.stderr.flush()
+                continue
+            
+            # Converte e amplifica com ffmpeg
+            result = subprocess.run(
+                ['ffmpeg', '-y', '-v', 'quiet', '-i', source,
+                 '-f', 'wav', '-ar', '44100', '-ac', '2',
+                 '-filter:a', 'volume=0.98', target],
+                capture_output=True,
+                timeout=10
+            )
+            
+            if result.returncode == 0:
+                sys.stderr.write(f"  ✓ {name} pré-processado\n")
+                sys.stderr.flush()
+            else:
+                sys.stderr.write(f"  ⚠ Erro ao pré-processar {name}\n")
+                sys.stderr.flush()
+                
+        except Exception as e:
+            sys.stderr.write(f"  ⚠ Erro {name}: {e}\n")
+            sys.stderr.flush()
+    
+    sys.stderr.write("✓ Pré-processamento concluído\n")
+    sys.stderr.flush()
+
+# Pré-processa arquivos na importação do módulo
+if AUDIO_AVAILABLE:
+    _preprocess_audio_files()
 
 def play_event_sound(blocking=False):
     """
@@ -84,58 +140,56 @@ def play_start_sound(blocking=False):
         thread.start()
 
 def _play_audio_internal(audio_file, sound_name):
-    """Função interna que toca o áudio usando ffmpeg + paplay com amplificação."""
+    """
+    Função interna que toca o áudio usando paplay com arquivo pré-processado.
+    arquivos já estão amplificados e no formato WAV, garantindo reprodução instantânea.
+    """
     with audio_lock:
         try:
-            sys.stderr.write(f"[{sound_name}] Reproduzindo áudio no G200...\n")
+            # Mapeia arquivo MP3 original para WAV pré-processado
+            if audio_file == GOAL_SOUND:
+                wav_file = GOAL_SOUND_WAV
+            elif audio_file == START_SOUND:
+                wav_file = START_SOUND_WAV
+            else:
+                sys.stderr.write(f"[{sound_name}] ⚠ Arquivo não mapeado: {audio_file}\n")
+                sys.stderr.flush()
+                return
+            
+            # Verifica se o arquivo WAV pré-processado existe
+            if not os.path.exists(wav_file):
+                sys.stderr.write(f"[{sound_name}] ⚠ Arquivo WAV não encontrado: {wav_file}\n")
+                sys.stderr.write(f"[{sound_name}] Tentando reprocessar...\n")
+                sys.stderr.flush()
+                _preprocess_audio_files()
+                
+                # Verifica novamente
+                if not os.path.exists(wav_file):
+                    sys.stderr.write(f"[{sound_name}] ⚠ Falha no reprocessamento\n")
+                    sys.stderr.flush()
+                    return
+            
+            sys.stderr.write(f"[{sound_name}] ▶ Reproduzindo áudio no G200...\n")
             sys.stderr.flush()
             
-            # Verifica se o arquivo existe
-            if not os.path.exists(audio_file):
-                sys.stderr.write(f"[{sound_name}] ⚠ Arquivo não encontrado: {audio_file}\n")
-                sys.stderr.flush()
-                return
-            
-            # Cria arquivo temporário amplificado
-            temp_file = "/tmp/audio_amplified.wav"
-            
-            # Usa ffmpeg para amplificar o áudio
-            # volume=0.98 = 98% de amplificação
-            result_ffmpeg = subprocess.run(
-                ['ffmpeg', '-y', '-v', 'quiet', '-i', audio_file, 
-                 '-f', 'wav', '-ar', '44100', '-ac', '2', 
-                 '-filter:a', 'volume=0.98', temp_file],
-                capture_output=True,
-                timeout=5
-            )
-            
-            if result_ffmpeg.returncode != 0:
-                sys.stderr.write(f"[{sound_name}] ⚠ Erro ao amplificar áudio\n")
-                sys.stderr.flush()
-                return
-            
-            # Toca o arquivo amplificado via paplay
+            # Toca o arquivo WAV pré-processado diretamente via paplay
+            # Volume 65536 = 100% do PulseAudio (já amplificado em 98% pelo ffmpeg)
             result_play = subprocess.run(
-                ['paplay', '--volume=65536', temp_file],
+                ['paplay', '--volume=65536', wav_file],
                 capture_output=True,
                 timeout=10
             )
             
-            # Remove arquivo temporário
-            try:
-                os.remove(temp_file)
-            except:
-                pass
-            
             if result_play.returncode == 0:
-                sys.stderr.write(f"[{sound_name}] ✓ Áudio reproduzido (volume 98%)\n")
+                sys.stderr.write(f"[{sound_name}] ✓ Áudio reproduzido (instantâneo, 98%)\n")
                 sys.stderr.flush()
             else:
-                sys.stderr.write(f"[{sound_name}] ⚠ Erro ao reproduzir: {result_play.stderr.decode()}\n")
+                stderr_output = result_play.stderr.decode() if result_play.stderr else "sem detalhes"
+                sys.stderr.write(f"[{sound_name}] ⚠ Erro ao reproduzir: {stderr_output}\n")
                 sys.stderr.flush()
             
         except subprocess.TimeoutExpired:
-            sys.stderr.write(f"[{sound_name}] ⚠ Timeout\n")
+            sys.stderr.write(f"[{sound_name}] ⚠ Timeout na reprodução\n")
             sys.stderr.flush()
         except Exception as e:
             sys.stderr.write(f"[{sound_name}] ⚠ Erro: {e}\n")
@@ -145,7 +199,6 @@ def stop_audio():
     """Para qualquer áudio que esteja tocando."""
     try:
         subprocess.run(['pkill', '-9', 'paplay'], capture_output=True, timeout=1)
-        subprocess.run(['pkill', '-9', 'ffmpeg'], capture_output=True, timeout=1)
         sys.stderr.write("🔇 Áudio parado\n")
         sys.stderr.flush()
     except:

@@ -22,9 +22,8 @@ def init_ffmpeg_routes(ffmpeg_manager):
     @ffmpeg_bp.route('/record', methods=['POST'])
     def handle_record():
         """Registra apenas o timestamp do evento (resposta rápida)"""
-        data = request.get_json() or {}
-        duration = data.get('duration', 10)  # Padrão 10 segundos
-        success = ffmpeg_manager.record_last_10_seconds(cam_id=0, duration=duration)
+        handle_record_cam1()  # Registra evento para câmera 1
+        handle_record_cam2()  # Registra evento para câmera 2
         if success:
             return jsonify({"status": "success", "message": f"Evento registrado para processamento (duração: {duration}s)"}), 200
         return jsonify({"status": "error", "message": "Erro ao registrar evento"}), 500
@@ -40,6 +39,7 @@ def init_ffmpeg_routes(ffmpeg_manager):
         
         success = ffmpeg_manager.record_last_10_seconds(cam_id=0, duration=duration)
         if success:
+            
             return jsonify({"status": "success", "message": f"Evento cam1 registrado (duração: {duration}s)"}), 200
         return jsonify({"status": "error", "message": "Erro ao registrar evento"}), 500
     
@@ -54,6 +54,7 @@ def init_ffmpeg_routes(ffmpeg_manager):
         
         success = ffmpeg_manager.record_last_10_seconds(cam_id=1, duration=duration)
         if success:
+            
             return jsonify({"status": "success", "message": f"Evento cam2 registrado (duração: {duration}s)"}), 200
         return jsonify({"status": "error", "message": "Erro ao registrar evento"}), 500
 

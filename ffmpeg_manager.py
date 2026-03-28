@@ -729,11 +729,13 @@ class FFMpegManager:
             date_str = current_time.strftime("%Y%m%d")
             timestamp_file = os.path.join(self.timestamp_dir, f"{date_str}.txt")
             
+            # Adiciona 2 segundos ao timestamp para compensar delay de processamento
+            event_time = current_time + timedelta(seconds=2)
             
             # Formato: timestamp_epoch|timestamp_iso|cam_id|duration|status
             event_data = {
-                "timestamp_epoch": int(current_time.timestamp()),
-                "timestamp_iso": current_time.isoformat(),
+                "timestamp_epoch": int(event_time.timestamp()),
+                "timestamp_iso": event_time.isoformat(),
                 "cam_id": cam_id,
                 "duration": duration,
                 "status": "pending"
@@ -749,7 +751,7 @@ class FFMpegManager:
                     finally:
                         fcntl.flock(f.fileno(), fcntl.LOCK_UN)
             
-            print(f"Evento registrado: cam_id={cam_id}, timestamp={current_time.isoformat()}")
+            print(f"Evento registrado: cam_id={cam_id}, timestamp={event_time.isoformat()} (+2s compensação)")
             
             # Feedback visual rápido - LED removido
             # if cam_id == 0:
