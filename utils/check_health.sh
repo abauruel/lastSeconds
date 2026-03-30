@@ -17,18 +17,38 @@ echo "📹 2. PROCESSOS FFMPEG ATIVOS"
 echo "----------------------------------------"
 FFMPEG_COUNT=$(ps aux | grep ffmpeg | grep -E "(video0|video2)" | grep -v grep | wc -l)
 echo "Processos FFmpeg ativos: $FFMPEG_COUNT"
-if [ $FFMPEG_COUNT -eq 2 ]; then
+
+if [ $FFMPEG_COUNT -eq 0 ]; then
+    echo "⚠️  AVISO: Nenhum processo FFmpeg está rodando!"
+    echo ""
+    echo "📌 Isso é esperado se as gravações não foram iniciadas ainda (v1.1+)"
+    echo ""
+    echo "Para iniciar as gravações:"
+    echo "  curl -X POST http://localhost:5000/start"
+    echo ""
+    echo "Para verificar o status da API:"
+    echo "  curl http://localhost:5000/status"
+    echo ""
+    echo "🔍 Se você já iniciou as gravações, pode haver um problema."
+    echo "   Verifique os logs: sudo journalctl -u better_seconds_record.service -n 50"
+    echo ""
+    RECORDING_NOT_STARTED=true
+elif [ $FFMPEG_COUNT -eq 2 ]; then
     echo "✅ Ambos os processos FFmpeg estão rodando"
+    RECORDING_NOT_STARTED=false
 elif [ $FFMPEG_COUNT -eq 1 ]; then
     echo "⚠️  Apenas 1 processo FFmpeg está rodando"
-elif [ $FFMPEG_COUNT -eq 0 ]; then
-    echo "❌ Nenhum processo FFmpeg está rodando!"
+    RECORDING_NOT_STARTED=false
 else
     echo "⚠️  Número inesperado de processos: $FFMPEG_COUNT"
+    RECORDING_NOT_STARTED=false
 fi
 echo ""
-ps aux | grep ffmpeg | grep -E "(video0|video2)" | grep -v grep | awk '{print $11, $12, $13, $14, $15, $16, $17, $18}' | head -2
-echo ""
+
+if [ "$RECORDING_NOT_STARTED" != "true" ]; then
+    ps aux | grep ffmpeg | grep -E "(video0|video2)" | grep -v grep | awk '{print $11, $12, $13, $14, $15, $16, $17, $18}' | head -2
+    echo ""
+fi
 
 # 3. Processos Zumbis
 echo "🧟 3. PROCESSOS ZUMBIS"
@@ -155,7 +175,21 @@ echo "=================================================="
 
 ISSUES=0
 
-# Verifica issues
+# Se gravações não foram iniciadas, não contar como erro
+if [ "$RECORDING_NOT_STARTED" = "true" ]; then
+    echo ""
+    echo "ℹ️  GRAVAÇÕES NÃO INICIADAS (v1.1+)"
+    echo ""
+    echo "O serviço está rodando, mas as gravações não foram iniciadas."
+    echo "Isso é o comportamento esperado a partir da versão 1.1."
+    echo ""
+    echo "Para iniciar as gravações:"
+    echo "  curl -X POST http://localhost:5000/start"
+    echo ""
+    exit 0
+fi
+
+# Verifica issues (apenas se gravações foram iniciadas)
 if [ $FFMPEG_COUNT -ne 2 ]; then
     echo "❌ Processos FFmpeg incorretos"
     ISSUES=$((ISSUES + 1))

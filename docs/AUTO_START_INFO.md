@@ -1,5 +1,21 @@
 # 🔄 Configuração de Inicialização Automática - Serviço Systemd
 
+## ⚠️ IMPORTANTE - Mudança na v1.1 (29/03/2026)
+
+**Inicialização Manual de Gravações**: O serviço `bts.service` inicia automaticamente após o boot, mas **não começa a gravar imediatamente**. É necessário chamar `POST /start` manualmente para iniciar as gravações.
+
+```bash
+# Após reboot, o serviço estará ativo mas sem gravar:
+sudo systemctl status bts.service  # active (running)
+
+# Para iniciar as gravações:
+curl -X POST http://localhost:5000/start
+```
+
+Esta mudança oferece maior controle sobre quando começar as gravações.
+
+---
+
 ## ✅ Serviço de Produção - BTS (Better Seconds)
 
 O sistema está configurado com um **serviço systemd** para inicialização automática e gerenciamento profissional da aplicação.
@@ -27,10 +43,10 @@ O sistema está configurado com um **serviço systemd** para inicialização aut
 #### 3. **Serviço BTS** 
 - ✅ **Dependências:** Aguarda `network-online.target`, `mediamtx.service`, `dnsmasq.service`
 - ✅ **Workers:** 2 processos Gunicorn (preload_app=True)
-- ✅ **FFmpeg:** 2 processos (câmera 0 e câmera 1)
-- ✅ **Watchdog:** Monitoramento de saúde a cada 15s
+- ⚠️ **FFmpeg:** NÃO inicia automaticamente (v1.1+) - requer chamada `POST /start`
+- ✅ **Watchdog:** Disponível após iniciar gravações
 - ✅ **API:** Flask na porta 5000
-- ✅ **Gravação:** Segmentos de 60s em `/media/pi/usb64gb/bts/`
+- ⚠️ **Gravação:** Só começa após `POST /start`
 
 ### 📊 Ordem de Inicialização:
 
@@ -48,6 +64,14 @@ O sistema está configurado com um **serviço systemd** para inicialização aut
 6. Serviço BTS inicia
    ├─ Gunicorn master process
    ├─ 2 workers Flask
+   ├─ API disponível na porta 5000
+   └─ ⚠️ AGUARDANDO comando POST /start
+       ↓
+   (Após POST /start)
+       ↓
+   ├─ FFmpeg processo 0 (câmera 0) inicia
+   ├─ FFmpeg processo 1 (câmera 1) inicia
+   └─ Watchdog ativo
    ├─ FFmpeg process 0 (stream1)
    └─ FFmpeg process 1 (stream2)
    ↓
@@ -130,19 +154,30 @@ WantedBy=multi-user.target
 sudo systemctl is-active bts.service
 # Deve retornar: active
 
-# 2. Verificar processos rodando
-ps aux | grep -E "gunicorn|ffmpeg" | grep -v grep
-# Deve mostrar: gunicorn (3 processos) + ffmpeg (2 processos)
+# 2. Verificar processos rodando (apenas Gunicorn neste momento)
+ps aux | grep -E "gunicorn" | grep -v grep
+# Deve mostrar: gunicorn (3 processos)
 
 # 3. Testar API
 curl http://localhost:5000/status
 # Deve retornar: {"status":"running"}
 
-# 4. Verificar câmeras online
+# ⚠️ IMPORTANTE (v1.1+): Iniciar gravações manualmente
+curl -X POST http://localhost:5000/start
+# Deve retornar: {"status":"success", "message":"Processos do ffmpeg iniciados..."}
+
+# Aguardar alguns segundos
+sleep 5
+
+# 4. Verificar processos FFmpeg agora rodando
+ps aux | grep -E "ffmpeg" | grep -v grep
+# Deve mostrar: ffmpeg (2 processos)
+
+# 5. Verificar câmeras online
 ping -c 2 192.168.0.210  # Câmera IMX415
 ping -c 2 192.168.0.209  # Câmera IPCAM
 
-# 5. Verificar gravação
+# 6. Verificar gravação (aguardar ~1 minuto)
 ls -lh /media/pi/usb64gb/bts/stream1/ | tail -3
 ls -lh /media/pi/usb64gb/bts/stream2/ | tail -3
 # Deve mostrar arquivos .ts recentes

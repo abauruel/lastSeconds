@@ -2,6 +2,19 @@
 
 Este documento descreve o deployment completo do sistema Better Seconds para produção, incluindo todas as configurações de rede, serviços e monitoramento.
 
+## ⚠️ IMPORTANTE - Mudança na v1.1 (29/03/2026)
+
+**Inicialização Manual de Gravações**: A partir da versão 1.1, a aplicação não inicia gravações automaticamente. Após o serviço iniciar, é necessário chamar `POST /start` para começar as gravações.
+
+```bash
+# Após iniciar o serviço:
+curl -X POST http://192.168.0.1:5000/start
+```
+
+Veja mais detalhes na [documentação da API](API_INTEGRATION.md).
+
+---
+
 ## 📋 Visão Geral do Sistema
 
 O sistema está configurado com:
@@ -244,15 +257,21 @@ Response: {
 # Status
 curl http://192.168.0.1:5000/status
 
-# Registrar evento cam 0
-curl -X POST http://192.168.0.1:5000/record-event \
-  -H "Content-Type: application/json" \
-  -d '{"cam_id": 0, "duration": 10}'
+# ⚠️ IMPORTANTE (v1.1+): Iniciar gravações primeiro
+curl -X POST http://192.168.0.1:5000/start
+# Aguardar alguns segundos para FFmpeg iniciar
+sleep 5
 
 # Registrar evento cam 1
-curl -X POST http://192.168.0.1:5000/record-event \
+curl -X POST http://192.168.0.1:5000/record/cam1
+
+# Registrar evento cam 2
+curl -X POST http://192.168.0.1:5000/record/cam2
+
+# Registrar evento cam 1 com duração customizada
+curl -X POST http://192.168.0.1:5000/record/cam1 \
   -H "Content-Type: application/json" \
-  -d '{"cam_id": 1, "duration": 15}'
+  -d '{"duration": 15}'
 ```
 
 ---

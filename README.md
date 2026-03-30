@@ -24,6 +24,35 @@ O sistema mantém duas câmeras gravando continuamente em segmentos de **1 minut
 - ✅ **Gravação em RAM**: Buffer em tmpfs elimina corrupção por I/O lento do pendrive
 - ✅ **Sincronização automática**: Cron move arquivos para pendrive a cada 1 minuto
 - ✅ **Alta performance**: ~1000 MB/s em RAM vs ~10-30 MB/s em pendrive USB
+- ✅ **Inicialização manual**: Controle total sobre quando iniciar as gravações (v1.1)
+
+## 🆕 Novidades (v1.1 - 29/03/2026)
+
+### Inicialização Manual de Gravações
+
+**⚠️ MUDANÇA IMPORTANTE:** A aplicação agora requer inicialização manual das gravações.
+
+Anteriormente, as gravações iniciavam automaticamente quando o serviço era iniciado. Agora:
+
+1. **Ao iniciar a aplicação**: O serviço estará pronto, mas não gravando
+2. **Para iniciar gravações**: Faça uma chamada POST para `/start`
+
+**Exemplo:**
+```bash
+# Verificar se o serviço está rodando
+curl http://localhost:5000/status
+
+# Iniciar as gravações
+curl -X POST http://localhost:5000/start
+```
+
+**Benefícios:**
+- ✅ Maior controle sobre quando começar a gravar
+- ✅ Permite configurações e verificações antes de iniciar
+- ✅ Economia de recursos quando gravação não é necessária
+- ✅ Facilita testes e debugging
+
+Para mais detalhes, consulte a [documentação da API](docs/API_INTEGRATION.md).
 
 ## 📚 Documentação
 

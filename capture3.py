@@ -38,22 +38,24 @@ app = create_app(ffmpeg_manager)
 CAMERA_0_RTSP_URL = os.environ.get('CAMERA_0_RTSP_URL', 'rtsp://')
 CAMERA_1_RTSP_URL = os.environ.get('CAMERA_1_RTSP_URL', 'rtsp://')
 
-if os.environ.get('SERVER_SOFTWARE', '').startswith('gunicorn'):
-    # Rodando em gunicorn - só inicia no master process com preload
-    import sys
-    if '--preload' in sys.argv or 'gunicorn_config.py' in ' '.join(sys.argv):
-        print("🎥 Inicializando FFmpeg no master process...")
-        ffmpeg_manager.start_ffmpeg_processes(0, "rtsp", CAMERA_0_RTSP_URL) 
-        ffmpeg_manager.start_ffmpeg_processes(1, "rtsp", CAMERA_1_RTSP_URL)
-        # ffmpeg_manager.start_ffmpeg_processes(0,"rtsp", "rtsp://admin:123456@192.168.1.188/stream0")
-        # ffmpeg_manager.start_ffmpeg_processes(1,"rtsp", "rtsp://admin:123456@192.168.1.188/stream1")
-        # start_temperature_monitoring(BASE_DIR)  # Desativado
-else:
-    # Rodando diretamente (python capture3.py)
-    print("🎥 Inicializando FFmpeg em modo standalone...")
-    ffmpeg_manager.start_ffmpeg_processes(0, "rtsp", CAMERA_0_RTSP_URL)
-    ffmpeg_manager.start_ffmpeg_processes(1, "rtsp", CAMERA_1_RTSP_URL)
-    # start_temperature_monitoring(BASE_DIR)  # Desativado
+# NOVA ABORDAGEM: Gravação não inicia automaticamente ao iniciar a aplicação
+# A gravação só começa quando receber uma chamada POST para /start via API
+# Isso permite maior controle sobre quando iniciar as gravações
+print("✅ Aplicação iniciada. Aguardando chamada para /start para iniciar gravações...")
+
+# Código anterior removido - gravação iniciava automaticamente:
+# if os.environ.get('SERVER_SOFTWARE', '').startswith('gunicorn'):
+#     # Rodando em gunicorn - só inicia no master process com preload
+#     import sys
+#     if '--preload' in sys.argv or 'gunicorn_config.py' in ' '.join(sys.argv):
+#         print("🎥 Inicializando FFmpeg no master process...")
+#         ffmpeg_manager.start_ffmpeg_processes(0, "rtsp", CAMERA_0_RTSP_URL) 
+#         ffmpeg_manager.start_ffmpeg_processes(1, "rtsp", CAMERA_1_RTSP_URL)
+# else:
+#     # Rodando diretamente (python capture3.py)
+#     print("🎥 Inicializando FFmpeg em modo standalone...")
+#     ffmpeg_manager.start_ffmpeg_processes(0, "rtsp", CAMERA_0_RTSP_URL)
+#     ffmpeg_manager.start_ffmpeg_processes(1, "rtsp", CAMERA_1_RTSP_URL)
 
 # Função principal
 def main():

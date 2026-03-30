@@ -2,6 +2,20 @@
 
 Documentação completa do sistema de gravação por eventos.
 
+## ⚠️ IMPORTANTE - Mudança na v1.1 (29/03/2026)
+
+**Inicialização Manual de Gravações**: A partir da versão 1.1, a aplicação **NÃO inicia gravações automaticamente**. É necessário chamar `POST /start` após o serviço estar rodando.
+
+```bash
+# Workflow atualizado:
+curl http://localhost:5000/status          # Verificar se está rodando
+curl -X POST http://localhost:5000/start   # Iniciar gravações
+```
+
+Consulte a [documentação da API](API_INTEGRATION.md) para mais detalhes.
+
+---
+
 ## 📖 Guias Principais
 
 ### 🚀 Instalação e Configuração

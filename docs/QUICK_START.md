@@ -2,6 +2,20 @@
 
 Guia completo para instalação e configuração do sistema Better Seconds Record em um Raspberry Pi 4B novo.
 
+## ⚠️ IMPORTANTE - Mudança na v1.1 (29/03/2026)
+
+**Inicialização Manual de Gravações**: A partir da versão 1.1, a aplicação não inicia gravações automaticamente. É necessário chamar `POST /start` após o serviço estar rodando.
+
+```bash
+# Workflow atualizado:
+curl http://localhost:5000/status          # Verificar se está rodando
+curl -X POST http://localhost:5000/start   # Iniciar gravações
+```
+
+Para mais detalhes, consulte a [documentação da API](API_INTEGRATION.md).
+
+---
+
 ## 📋 Pré-requisitos
 
 ### Hardware Necessário
@@ -379,6 +393,13 @@ ls -lh /media/pi/usb64gb/bts/stream2/ | head -5
 # Verificar se API está respondendo
 curl http://localhost:5000/health
 # Esperado: JSON com status "healthy"
+
+# ⚠️ IMPORTANTE: Iniciar as gravações primeiro (v1.1+)
+curl -X POST http://localhost:5000/start
+# Esperado: {"status": "success", "message": "Processos do ffmpeg iniciados..."}
+
+# Aguardar alguns segundos para o FFmpeg começar a gravar
+sleep 5
 
 # Registrar evento teste
 curl -X POST http://localhost:5000/record/cam1

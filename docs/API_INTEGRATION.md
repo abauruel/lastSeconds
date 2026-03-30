@@ -3,8 +3,34 @@
 
 **Base URL:** `http://localhost:5000` ou `http://<raspberry-pi-ip>:5000`
 
-**Data:** 28 de Março de 2026  
-**Versão:** 1.0  
+**Data:** 29 de Março de 2026  
+**Versão:** 1.1  
+
+---
+
+## ⚠️ MUDANÇAS IMPORTANTES (v1.1)
+
+### Inicialização Manual de Gravações
+**A partir da versão 1.1, a aplicação não inicia gravações automaticamente ao iniciar.**
+
+Anteriormente, os processos FFmpeg iniciavam automaticamente quando a aplicação era iniciada. Agora, você deve:
+
+1. **Iniciar a aplicação** - A aplicação iniciará, mas não começará a gravar
+2. **Chamar a rota `/start`** - Somente após receber esta chamada as gravações serão iniciadas
+
+**Exemplo de workflow atualizado:**
+```bash
+# 1. Iniciar o serviço (systemd ou manualmente)
+sudo systemctl start video_uploader.service
+
+# 2. Aguardar a aplicação estar pronta
+curl http://localhost:5000/status
+
+# 3. Iniciar as gravações quando desejado
+curl -X POST http://localhost:5000/start
+```
+
+Esta mudança oferece maior controle sobre quando iniciar as gravações, permitindo configurações e verificações antes de começar a capturar vídeo.
 
 ---
 
@@ -255,17 +281,49 @@ curl http://localhost:5000/process_timestamps/status
 ### POST `/start`
 Inicia os processos FFmpeg para ambas as câmeras.
 
+**⚠️ MUDANÇA IMPORTANTE:** A partir de agora, a aplicação não inicia as gravações automaticamente. É necessário chamar esta rota explicitamente para iniciar as gravações.
+
+**Parâmetros (Body JSON - Opcionais):**
+```json
+{
+  "input_source": "rtsp",           // Tipo de fonte: "rtsp" ou "usb" (default: "rtsp")
+  "camera_0_url": "rtsp://...",     // URL RTSP da câmera 0 (override da variável de ambiente)
+  "camera_1_url": "rtsp://..."      // URL RTSP da câmera 1 (override da variável de ambiente)
+}
+```
+
 **Resposta de Sucesso (200):**
 ```json
 {
   "status": "success",
-  "message": "Processos do ffmpeg iniciados para ambas as câmeras."
+  "message": "Processos do ffmpeg iniciados para ambas as câmeras.",
+  "camera_0": "rtsp://admin:123456@192.168.1.100/stream0",
+  "camera_1": "rtsp://admin:123456@192.168.1.100/stream1",
+  "input_source": "rtsp"
 }
 ```
 
-**Exemplo:**
+**Exemplo Básico:**
 ```bash
 curl -X POST http://localhost:5000/start
+```
+
+**Exemplo com Parâmetros:**
+```bash
+curl -X POST http://localhost:5000/start \
+  -H "Content-Type: application/json" \
+  -d '{
+    "input_source": "rtsp",
+    "camera_0_url": "rtsp://admin:password@192.168.1.100/stream0",
+    "camera_1_url": "rtsp://admin:password@192.168.1.100/stream1"
+  }'
+```
+
+**Exemplo para câmeras USB:**
+```bash
+curl -X POST http://localhost:5000/start \
+  -H "Content-Type: application/json" \
+  -d '{"input_source": "usb"}'
 ```
 
 ---

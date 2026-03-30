@@ -13,11 +13,33 @@ def init_ffmpeg_routes(ffmpeg_manager):
 
     @ffmpeg_bp.route('/start', methods=['POST'])
     def handle_start():
+        """Inicia as gravações das câmeras via API."""
+        # Obtém as URLs RTSP das variáveis de ambiente
+        camera_0_rtsp = os.environ.get('CAMERA_0_RTSP_URL', 'rtsp://')
+        camera_1_rtsp = os.environ.get('CAMERA_1_RTSP_URL', 'rtsp://')
+        
+        # Parâmetros opcionais via body da requisição
+        data = request.get_json(silent=True, force=True) or {}
+        input_source = data.get('input_source', 'rtsp')  # padrão: rtsp
+        
+        # Permite override das URLs via requisição (opcional)
+        camera_0_url = data.get('camera_0_url', camera_0_rtsp)
+        camera_1_url = data.get('camera_1_url', camera_1_rtsp)
+        
+        # Limpa os buffers antes de iniciar
         ffmpeg_manager.clear_buffers()
-        # Iniciar ambas as câmeras
-        ffmpeg_manager.start_ffmpeg_processes(device_number=0, input_source="usb")
-        ffmpeg_manager.start_ffmpeg_processes(device_number=1, input_source="usb")
-        return jsonify({"status": "success", "message": "Processos do ffmpeg iniciados para ambas as câmeras."}), 200
+        
+        # Inicia ambas as câmeras
+        ffmpeg_manager.start_ffmpeg_processes(device_number=0, input_source=input_source, stream=camera_0_url)
+        ffmpeg_manager.start_ffmpeg_processes(device_number=1, input_source=input_source, stream=camera_1_url)
+        
+        return jsonify({
+            "status": "success", 
+            "message": "Processos do ffmpeg iniciados para ambas as câmeras.",
+            "camera_0": camera_0_url,
+            "camera_1": camera_1_url,
+            "input_source": input_source
+        }), 200
 
     @ffmpeg_bp.route('/record', methods=['POST'])
     def handle_record():

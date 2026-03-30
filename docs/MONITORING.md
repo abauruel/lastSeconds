@@ -9,15 +9,27 @@ Este documento descreve todas as formas de monitorar a saúde da aplicação de 
 **Uso para sistema com gravação em RAM:**
 
 ```bash
-/home/pi/app/monitor_ram.sh
+/home/pi/app/scripts/monitor_ram.sh
 ```
 
+**⚠️ IMPORTANTE (v1.1+):** Se as gravações não foram iniciadas ainda, o script irá avisar e sugerir chamar `POST /start`.
+
 **O que mostra:**
-- ✅ Arquivos em RAM (últimos 3 de cada stream)
+- ✅ Status dos processos FFmpeg (se rodando ou não)
+- ✅ Arquivos em RAM (últimos 5 de cada stream)
 - ✅ Uso de espaço em /dev/shm/bts/
-- ✅ Processos FFmpeg ativos
 - ✅ Últimas 5 linhas do log de sincronização
 - ✅ Status geral do buffer em RAM
+
+**Exemplo quando gravações não iniciadas:**
+```
+⚠️  AVISO: Nenhum processo FFmpeg detectado!
+
+As gravações não foram iniciadas ainda.
+
+Para iniciar as gravações (v1.1+):
+  curl -X POST http://localhost:5000/start
+```
 
 ---
 
@@ -26,12 +38,14 @@ Este documento descreve todas as formas de monitorar a saúde da aplicação de 
 **Uso mais recomendado** - Mostra todos os detalhes em formato legível:
 
 ```bash
-/home/pi/app/check_health.sh
+/home/pi/app/utils/check_health.sh
 ```
+
+**⚠️ IMPORTANTE (v1.1+):** O script detecta automaticamente se as gravações foram iniciadas. Se não, mostra instruções para iniciar via API.
 
 **O que verifica:**
 - ✅ Status do serviço systemd
-- ✅ Processos FFmpeg ativos (esperado: 2)
+- ✅ Processos FFmpeg ativos (esperado: 2 quando gravando)
 - ✅ Processos zumbis
 - ✅ Últimos arquivos gravados (Stream1 e Stream2)
 - ✅ Câmeras USB detectadas
@@ -40,9 +54,18 @@ Este documento descreve todas as formas de monitorar a saúde da aplicação de 
 - ✅ Temperatura da CPU
 - ✅ Resumo com status geral
 
-**Exemplo de saída:**
+**Exemplo de saída (sistema saudável e gravando):**
 ```
 ✅ ✅ ✅ SISTEMA SAUDÁVEL ✅ ✅ ✅
+```
+
+**Exemplo de saída (gravações não iniciadas):**
+```
+ℹ️  GRAVAÇÕES NÃO INICIADAS (v1.1+)
+
+O serviço está rodando, mas as gravações não foram iniciadas.
+Para iniciar as gravações:
+  curl -X POST http://localhost:5000/start
 ```
 
 ---
@@ -110,7 +133,18 @@ curl http://localhost:5000/health | python3 -m json.tool
 ```bash
 ps aux | grep ffmpeg | grep -E "(video0|video2)" | grep -v grep
 ```
-**Esperado:** 2 processos ativos
+**Esperado:** 
+- **2 processos ativos** - Quando gravações foram iniciadas
+- **0 processos** - Se gravações não foram iniciadas ainda (v1.1+)
+
+**Se não houver processos e você já iniciou as gravações:**
+```bash
+# Verificar logs para investigar
+sudo journalctl -u bts.service -n 50
+
+# Tentar iniciar manualmente
+curl -X POST http://localhost:5000/start
+```
 
 #### Verificar arquivos gravados:
 

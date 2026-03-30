@@ -1,5 +1,24 @@
 # API de Gravação - Exemplos de Uso
 
+## ⚠️ IMPORTANTE - v1.1+
+
+**Antes de registrar eventos, é necessário iniciar as gravações:**
+
+```bash
+# 1. Verificar se o serviço está rodando
+curl http://localhost:5000/status
+
+# 2. Iniciar as gravações
+curl -X POST http://localhost:5000/start
+
+# 3. Aguardar alguns segundos para FFmpeg iniciar
+sleep 5
+
+# 4. Agora você pode registrar eventos
+```
+
+---
+
 ## Registro de Eventos com Duração Dinâmica
 
 ### Padrão (10 segundos)
