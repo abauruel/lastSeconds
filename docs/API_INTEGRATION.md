@@ -3,8 +3,8 @@
 
 **Base URL:** `http://localhost:5000` ou `http://<raspberry-pi-ip>:5000`
 
-**Data:** 29 de Março de 2026  
-**Versão:** 1.1  
+**Data:** 03 de Abril de 2026  
+**Versão:** 1.2  
 
 ---
 
@@ -39,6 +39,7 @@ Esta mudança oferece maior controle sobre quando iniciar as gravações, permit
 - [Rotas de Status](#rotas-de-status)
 - [Rotas de Gravação](#rotas-de-gravação)
 - [Rotas de Processamento](#rotas-de-processamento)
+- [Rotas de Vídeos](#rotas-de-vídeos)
 - [Rotas de Sistema](#rotas-de-sistema)
 - [Códigos de Status HTTP](#códigos-de-status-http)
 - [Exemplos de Integração](#exemplos-de-integração)
@@ -128,13 +129,13 @@ Registra um evento na câmera 1 e reproduz áudio de confirmação via Bluetooth
 **Parâmetros (JSON):**
 | Parâmetro | Tipo | Obrigatório | Padrão | Descrição |
 |-----------|------|-------------|---------|-----------|
-| `duration` | integer | Não | 10 | Duração do vídeo em segundos (antes do evento) |
+| `duration` | integer | Não | 12 | Duração do vídeo em segundos (antes do evento) |
 
 **Resposta de Sucesso (200):**
 ```json
 {
   "status": "success",
-  "message": "Evento cam1 registrado (duração: 10s)"
+  "message": "Evento cam1 registrado (duração: 12s)"
 }
 ```
 
@@ -161,13 +162,13 @@ Registra um evento na câmera 2 e reproduz áudio de confirmação via Bluetooth
 **Parâmetros (JSON):**
 | Parâmetro | Tipo | Obrigatório | Padrão | Descrição |
 |-----------|------|-------------|---------|-----------|
-| `duration` | integer | Não | 10 | Duração do vídeo em segundos (antes do evento) |
+| `duration` | integer | Não | 12 | Duração do vídeo em segundos (antes do evento) |
 
 **Resposta de Sucesso (200):**
 ```json
 {
   "status": "success",
-  "message": "Evento cam2 registrado (duração: 10s)"
+  "message": "Evento cam2 registrado (duração: 12s)"
 }
 ```
 
@@ -181,26 +182,48 @@ curl -X POST http://localhost:5000/record/cam2 \
 ---
 
 ### POST `/record`
-Registra um evento na câmera principal (cam1) sem reprodução de áudio.
+Registra um evento em **ambas as câmeras simultaneamente** (cam1 e cam2) e reproduz áudio de confirmação via Bluetooth.
 
 **Parâmetros (JSON):**
 | Parâmetro | Tipo | Obrigatório | Padrão | Descrição |
 |-----------|------|-------------|---------|-----------|
-| `duration` | integer | Não | 10 | Duração do vídeo em segundos |
+| `duration` | integer | Não | 12 | Duração do vídeo em segundos (antes do evento) |
 
 **Resposta de Sucesso (200):**
 ```json
 {
   "status": "success",
-  "message": "Evento registrado para processamento (duração: 10s)"
+  "message": "Evento registrado para ambas as câmeras (duração: 12s)"
 }
 ```
 
-**Exemplo:**
+**Resposta de Sucesso Parcial (200):**
+```json
+{
+  "status": "partial",
+  "message": "Evento registrado apenas para cam1 (duração: 12s)"
+}
+```
+
+**Resposta de Erro (500):**
+```json
+{
+  "status": "error",
+  "message": "Erro ao registrar evento em ambas as câmeras"
+}
+```
+
+**Exemplo - Duração padrão (12s):**
+```bash
+curl -X POST http://localhost:5000/record \
+  -H "Content-Type: application/json"
+```
+
+**Exemplo - Duração personalizada (15s):**
 ```bash
 curl -X POST http://localhost:5000/record \
   -H "Content-Type: application/json" \
-  -d '{"duration": 10}'
+  -d '{"duration": 15}'
 ```
 
 ---
@@ -276,7 +299,145 @@ curl http://localhost:5000/process_timestamps/status
 
 ---
 
-## 🔧 Rotas de Sistema
+## � Rotas de Vídeos
+
+### GET `/videos`
+Lista todas as datas disponíveis com vídeos processados.
+
+**Resposta de Sucesso (200):**
+```json
+{
+  "status": "success",
+  "total_dates": 2,
+  "dates": [
+    {
+      "date": "20260403",
+      "date_formatted": "03/04/2026",
+      "video_count": 5,
+      "path": "/videos/20260403"
+    },
+    {
+      "date": "20260402",
+      "date_formatted": "02/04/2026",
+      "video_count": 3,
+      "path": "/videos/20260402"
+    }
+  ]
+}
+```
+
+**Exemplo:**
+```bash
+curl http://localhost:5000/videos
+```
+
+---
+
+### GET `/videos/<date>`
+Lista todos os vídeos de uma data específica.
+
+**Parâmetros de URL:**
+| Parâmetro | Tipo | Descrição |
+|-----------|------|-----------|
+| `date` | string | Data no formato YYYYMMDD (ex: 20260403) |
+
+**Resposta de Sucesso (200):**
+```json
+{
+  "status": "success",
+  "date": "20260403",
+  "date_formatted": "03/04/2026",
+  "total_videos": 2,
+  "videos": [
+    {
+      "filename": "rpi4bmobile_stream2_20260403_113647.mp4",
+      "size_bytes": 2714696,
+      "size_mb": 2.59,
+      "modified": "2026-04-03T11:38:43.039474",
+      "download_url": "/videos/20260403/rpi4bmobile_stream2_20260403_113647.mp4"
+    },
+    {
+      "filename": "rpi4bmobile_stream1_20260403_113644.mp4",
+      "size_bytes": 1093357,
+      "size_mb": 1.04,
+      "modified": "2026-04-03T11:38:41.747476",
+      "download_url": "/videos/20260403/rpi4bmobile_stream1_20260403_113644.mp4"
+    }
+  ]
+}
+```
+
+**Resposta de Erro (400 - Data Inválida):**
+```json
+{
+  "status": "error",
+  "message": "Formato de data inválido. Use YYYYMMDD (ex: 20260403)"
+}
+```
+
+**Resposta de Erro (404 - Data Não Encontrada):**
+```json
+{
+  "status": "error",
+  "message": "Nenhum vídeo encontrado para a data 20260403"
+}
+```
+
+**Exemplo:**
+```bash
+curl http://localhost:5000/videos/20260403
+```
+
+---
+
+### GET `/videos/<date>/<filename>`
+Faz download de um vídeo específico.
+
+**Parâmetros de URL:**
+| Parâmetro | Tipo | Descrição |
+|-----------|------|-----------|
+| `date` | string | Data no formato YYYYMMDD (ex: 20260403) |
+| `filename` | string | Nome do arquivo MP4 |
+
+**Resposta de Sucesso (200):**
+- Retorna o arquivo de vídeo MP4 para download
+- Header `Content-Type: video/mp4`
+- Header `Content-Disposition: attachment; filename=<nome_arquivo>`
+
+**Resposta de Erro (400 - Arquivo Inválido):**
+```json
+{
+  "status": "error",
+  "message": "Apenas arquivos .mp4 são permitidos"
+}
+```
+
+**Resposta de Erro (404 - Arquivo Não Encontrado):**
+```json
+{
+  "status": "error",
+  "message": "Vídeo não encontrado"
+}
+```
+
+**Exemplo - Download via curl:**
+```bash
+curl -O http://localhost:5000/videos/20260403/rpi4bmobile_stream1_20260403_113644.mp4
+```
+
+**Exemplo - Download via wget:**
+```bash
+wget http://localhost:5000/videos/20260403/rpi4bmobile_stream1_20260403_113644.mp4
+```
+
+**Exemplo - Visualizar no navegador:**
+```
+http://192.168.1.100:5000/videos/20260403/rpi4bmobile_stream1_20260403_113644.mp4
+```
+
+---
+
+## �🔧 Rotas de Sistema
 
 ### POST `/start`
 Inicia os processos FFmpeg para ambas as câmeras.
@@ -595,7 +756,7 @@ import json
 base_url = "http://192.168.1.100:5000"
 
 # Registrar evento na câmera 1
-def registrar_evento_cam1(duracao=10):
+def registrar_evento_cam1(duracao=12):
     url = f"{base_url}/record/cam1"
     payload = {"duration": duracao}
     headers = {"Content-Type": "application/json"}
@@ -640,7 +801,7 @@ const axios = require('axios');
 const baseURL = 'http://192.168.1.100:5000';
 
 // Registrar evento na câmera 2
-async function registrarEventoCam2(duracao = 10) {
+async function registrarEventoCam2(duracao = 12) {
   try {
     const response = await axios.post(`${baseURL}/record/cam2`, {
       duration: duracao
@@ -727,7 +888,7 @@ processar_timestamps() {
 
 # Uso
 echo "Registrando evento na câmera 1..."
-registrar_evento "cam1" 10
+registrar_evento "cam1" 12
 
 echo -e "\n\nVerificando saúde do sistema..."
 verificar_saude
@@ -757,7 +918,7 @@ def receber_evento():
     
     # Determina qual câmera usar
     camera = data.get('camera', 'cam1')
-    duracao = data.get('duracao', 10)
+    duracao = data.get('duracao', 12)
     
     # Registra evento no Better Seconds
     response = requests.post(
@@ -799,7 +960,7 @@ Atualmente, a API **não possui autenticação**. Recomenda-se:
 ### Áudio
 - Reprodução de áudio funciona via dispositivo Bluetooth **G200**
 - Volume configurado para **98%**
-- Apenas rotas `/record/cam1` e `/record/cam2` reproduzem áudio
+- Rotas `/record`, `/record/cam1` e `/record/cam2` reproduzem áudio de confirmação
 
 ### Armazenamento
 - Timestamps: `/media/pi/usb64gb/bts/streams/timestamps/`
@@ -842,6 +1003,22 @@ Para questões ou problemas:
 
 ---
 
-**Última atualização:** 28 de Março de 2026  
-**Versão da API:** 1.0  
+**Última atualização:** 03 de Abril de 2026  
+**Versão da API:** 1.2  
 **Sistema:** Better Seconds Recording System
+
+## 📝 Changelog
+
+### v1.2 (03/04/2026)
+- ✨ Adicionadas rotas de listagem e download de vídeos (`/videos`, `/videos/<date>`, `/videos/<date>/<filename>`)
+- ✨ Adicionada rota `/reboot` para reiniciar o Raspberry Pi
+- 🔧 Rota `/record` agora registra evento em ambas as câmeras simultaneamente
+- 🔧 Duração padrão de eventos alterada de 10s para 12s
+- 🔧 Correção de bug na rota `/record` que causava erro 500
+
+### v1.1 (29/03/2026)
+- ⚠️ Inicialização manual de gravações obrigatória via `/start`
+- ✨ Adicionadas rotas de gerenciamento de sistema (`/shutdown`, `/update_time`)
+
+### v1.0 (28/03/2026)
+- 🎉 Lançamento inicial da API

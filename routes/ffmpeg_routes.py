@@ -1,8 +1,9 @@
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, send_file
 from database.models import Video, VideoStatus
 from database.db_config import SessionLocal
 import os
 import glob
+from datetime import datetime
 from audio_player import play_event_sound
 
 # Cria um blueprint para as rotas do ffmpeg
@@ -191,5 +192,171 @@ def init_ffmpeg_routes(ffmpeg_manager):
             return jsonify({"status": "success", "message": f"Serviço {service_name} reiniciado."}), 200
         except Exception as e:
             return jsonify({"status": "error", "message": str(e)}), 500
+    
+    @ffmpeg_bp.route('/videos', methods=['GET'])
+    def list_video_dates():
+        """Lista todas as datas com vídeos processados disponíveis"""
+        try:
+            base_path = "/media/pi/usb64gb/bts/streams"
+            
+            if not os.path.exists(base_path):
+                return jsonify({
+                    "status": "error",
+                    "message": "Diretório de vídeos não encontrado"
+                }), 404
+            
+            # Lista todos os diretórios em formato YYYYMMDD
+            dates = []
+            for item in os.listdir(base_path):
+                item_path = os.path.join(base_path, item)
+                # Verifica se é um diretório e tem formato YYYYMMDD (8 dígitos)
+                if os.path.isdir(item_path) and item.isdigit() and len(item) == 8:
+                    try:
+                        # Valida se é uma data válida
+                        date_obj = datetime.strptime(item, '%Y%m%d')
+                        
+                        # Conta quantos vídeos tem nessa data
+                        video_files = [f for f in os.listdir(item_path) 
+                                     if f.endswith('.mp4')]
+                        
+                        dates.append({
+                            "date": item,
+                            "date_formatted": date_obj.strftime('%d/%m/%Y'),
+                            "video_count": len(video_files),
+                            "path": f"/videos/{item}"
+                        })
+                    except ValueError:
+                        # Ignora diretórios que não são datas válidas
+                        pass
+            
+            # Ordena por data (mais recente primeiro)
+            dates.sort(key=lambda x: x['date'], reverse=True)
+            
+            return jsonify({
+                "status": "success",
+                "total_dates": len(dates),
+                "dates": dates
+            }), 200
+            
+        except Exception as e:
+            print(f"Erro ao listar datas de vídeos: {e}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                "status": "error",
+                "message": f"Erro ao listar datas: {str(e)}"
+            }), 500
+    
+    @ffmpeg_bp.route('/videos/<date>', methods=['GET'])
+    def list_videos_by_date(date):
+        """Lista todos os vídeos de uma data específica (formato YYYYMMDD)"""
+        try:
+            # Valida formato da data
+            if not date.isdigit() or len(date) != 8:
+                return jsonify({
+                    "status": "error",
+                    "message": "Formato de data inválido. Use YYYYMMDD (ex: 20260403)"
+                }), 400
+            
+            try:
+                date_obj = datetime.strptime(date, '%Y%m%d')
+            except ValueError:
+                return jsonify({
+                    "status": "error",
+                    "message": "Data inválida"
+                }), 400
+            
+            date_path = f"/media/pi/usb64gb/bts/streams/{date}"
+            
+            if not os.path.exists(date_path):
+                return jsonify({
+                    "status": "error",
+                    "message": f"Nenhum vídeo encontrado para a data {date}"
+                }), 404
+            
+            # Lista todos os arquivos MP4
+            videos = []
+            for filename in os.listdir(date_path):
+                if filename.endswith('.mp4'):
+                    file_path = os.path.join(date_path, filename)
+                    file_stat = os.stat(file_path)
+                    
+                    videos.append({
+                        "filename": filename,
+                        "size_bytes": file_stat.st_size,
+                        "size_mb": round(file_stat.st_size / (1024 * 1024), 2),
+                        "modified": datetime.fromtimestamp(file_stat.st_mtime).isoformat(),
+                        "download_url": f"/videos/{date}/{filename}"
+                    })
+            
+            # Ordena por nome (mais recente primeiro)
+            videos.sort(key=lambda x: x['filename'], reverse=True)
+            
+            return jsonify({
+                "status": "success",
+                "date": date,
+                "date_formatted": date_obj.strftime('%d/%m/%Y'),
+                "total_videos": len(videos),
+                "videos": videos
+            }), 200
+            
+        except Exception as e:
+            print(f"Erro ao listar vídeos da data {date}: {e}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                "status": "error",
+                "message": f"Erro ao listar vídeos: {str(e)}"
+            }), 500
+    
+    @ffmpeg_bp.route('/videos/<date>/<filename>', methods=['GET'])
+    def download_video(date, filename):
+        """Faz download de um vídeo específico"""
+        try:
+            # Valida formato da data
+            if not date.isdigit() or len(date) != 8:
+                return jsonify({
+                    "status": "error",
+                    "message": "Formato de data inválido"
+                }), 400
+            
+            # Valida extensão do arquivo
+            if not filename.endswith('.mp4'):
+                return jsonify({
+                    "status": "error",
+                    "message": "Apenas arquivos .mp4 são permitidos"
+                }), 400
+            
+            # Previne path traversal
+            if '..' in filename or '/' in filename:
+                return jsonify({
+                    "status": "error",
+                    "message": "Nome de arquivo inválido"
+                }), 400
+            
+            file_path = f"/media/pi/usb64gb/bts/streams/{date}/{filename}"
+            
+            if not os.path.exists(file_path):
+                return jsonify({
+                    "status": "error",
+                    "message": "Vídeo não encontrado"
+                }), 404
+            
+            # Envia o arquivo para download
+            return send_file(
+                file_path,
+                mimetype='video/mp4',
+                as_attachment=True,
+                download_name=filename
+            )
+            
+        except Exception as e:
+            print(f"Erro ao fazer download do vídeo {date}/{filename}: {e}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                "status": "error",
+                "message": f"Erro ao fazer download: {str(e)}"
+            }), 500
         
     return ffmpeg_bp
