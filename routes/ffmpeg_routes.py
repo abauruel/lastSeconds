@@ -43,18 +43,29 @@ def init_ffmpeg_routes(ffmpeg_manager):
 
     @ffmpeg_bp.route('/record', methods=['POST'])
     def handle_record():
-        """Registra apenas o timestamp do evento (resposta rápida)"""
-        handle_record_cam1()  # Registra evento para câmera 1
-        handle_record_cam2()  # Registra evento para câmera 2
-        if success:
-            return jsonify({"status": "success", "message": f"Evento registrado para processamento (duração: {duration}s)"}), 200
-        return jsonify({"status": "error", "message": "Erro ao registrar evento"}), 500
+        """Registra apenas o timestamp do evento para ambas as câmeras"""
+        data = request.get_json(silent=True, force=True) or {}
+        duration = data.get('duration', 12)  # Padrão 12 segundos
+        
+        # Toca áudio de evento (não-bloqueante)
+        play_event_sound(blocking=False)
+        
+        # Registra evento para ambas as câmeras
+        success_cam1 = ffmpeg_manager.record_last_10_seconds(cam_id=0, duration=duration)
+        success_cam2 = ffmpeg_manager.record_last_10_seconds(cam_id=1, duration=duration)
+        
+        if success_cam1 and success_cam2:
+            return jsonify({"status": "success", "message": f"Evento registrado para ambas as câmeras (duração: {duration}s)"}), 200
+        elif success_cam1 or success_cam2:
+            cameras = "cam1" if success_cam1 else "cam2"
+            return jsonify({"status": "partial", "message": f"Evento registrado apenas para {cameras} (duração: {duration}s)"}), 200
+        return jsonify({"status": "error", "message": "Erro ao registrar evento em ambas as câmeras"}), 500
     
     @ffmpeg_bp.route('/record/cam1', methods=['POST'])
     def handle_record_cam1():
         """Registra apenas o timestamp do evento da câmera 1"""
         data = request.get_json(silent=True, force=True) or {}
-        duration = data.get('duration', 10)  # Padrão 10 segundos
+        duration = data.get('duration', 12)  # Padrão 12 segundos
         
         # Toca áudio de evento (não-bloqueante)
         play_event_sound(blocking=False)
@@ -69,7 +80,7 @@ def init_ffmpeg_routes(ffmpeg_manager):
     def handle_record_cam2():
         """Registra apenas o timestamp do evento da câmera 2"""
         data = request.get_json(silent=True, force=True) or {}
-        duration = data.get('duration', 10)  # Padrão 10 segundos
+        duration = data.get('duration', 12)  # Padrão 12 segundos
         
         # Toca áudio de evento (não-bloqueante)
         play_event_sound(blocking=False)
