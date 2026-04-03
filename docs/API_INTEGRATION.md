@@ -458,6 +458,64 @@ sudo shutdown -c
 
 ---
 
+### POST `/reboot`
+Reinicia o Raspberry Pi com segurança, encerrando corretamente os processos FFmpeg.
+
+**Parâmetros (JSON):**
+| Parâmetro | Tipo | Obrigatório | Padrão | Descrição |
+|-----------|------|-------------|---------|-----------|
+| `delay` | integer | Não | 10 | Delay em segundos antes do reboot (0-300) |
+
+**Resposta de Sucesso (200):**
+```json
+{
+  "status": "success",
+  "message": "Reboot iniciado com sucesso",
+  "timestamp": "2026-03-28T17:30:00.123456",
+  "delay_seconds": 10,
+  "steps": [
+    "FFmpeg processes stopped",
+    "Disk data synchronized",
+    "System reboot scheduled in 10s"
+  ]
+}
+```
+
+**Resposta de Erro (400):**
+```json
+{
+  "status": "error",
+  "message": "delay deve ser um inteiro entre 0 e 300 segundos"
+}
+```
+
+**Exemplo - Reboot com delay padrão (10s):**
+```bash
+curl -X POST http://localhost:5000/reboot \
+  -H "Content-Type: application/json"
+```
+
+**Exemplo - Reboot imediato:**
+```bash
+curl -X POST http://localhost:5000/reboot \
+  -H "Content-Type: application/json" \
+  -d '{"delay": 0}'
+```
+
+**Exemplo - Reboot com delay personalizado (30s):**
+```bash
+curl -X POST http://localhost:5000/reboot \
+  -H "Content-Type: application/json" \
+  -d '{"delay": 30}'
+```
+
+**Cancelar reboot agendado:**
+```bash
+sudo shutdown -c
+```
+
+---
+
 ### PUT `/update_status`
 Atualiza o status de processamento de um vídeo no banco de dados.
 
