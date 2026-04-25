@@ -464,7 +464,209 @@ Rede: ~5-10 Mbps por câmera
 
 ---
 
-## 📚 Documentos Relacionados
+## � Backup e Restore do MicroSD
+### 🚀 Método Recomendado: Script Automatizado
+
+**Use o script incluído para facilitar o processo:**
+
+```bash
+# No diretório do projeto
+cd /home/pi/app/scripts
+
+# Modo interativo (recomendado)
+sudo ./backup_microsd.sh
+
+# Ou especificando dispositivo e destino
+sudo ./backup_microsd.sh /dev/sdb ~/backups/
+```
+
+**O script faz:**
+- ✅ Detecta e lista dispositivos automaticamente
+- ✅ Confirma dispositivo correto antes de iniciar
+- ✅ Cria backup com nome timestamped
+- ✅ Opção de compactação automática
+- ✅ Verifica espaço em disco disponível
+- ✅ Fornece instruções para Balena Etcher
+- ✅ Salva informações do backup
+
+**Após o backup, use o Balena Etcher para restaurar:**
+1. Baixe: https://www.balena.io/etcher/
+2. Abra e selecione o arquivo `.img` ou `.img.gz` criado
+3. Selecione o novo microSD de destino
+4. Clique em "Flash!"
+
+**📖 Documentação completa:** [README_backup_microsd.md](../scripts/README_backup_microsd.md)
+
+---
+### Backup Completo do MicroSD (Linux/macOS)
+
+**1. Identificar o dispositivo do microSD:**
+```bash
+# No computador com leitor de cartão
+lsblk
+# ou
+sudo fdisk -l
+
+# Exemplo: /dev/sdb (Linux) ou /dev/disk2 (macOS)
+```
+
+**2. Criar backup completo (imagem .img):**
+```bash
+# Linux
+sudo dd if=/dev/sdb of=~/backup-bts-$(date +%Y%m%d).img bs=4M status=progress
+
+# macOS
+sudo dd if=/dev/rdisk2 of=~/backup-bts-$(date +%Y%m%d).img bs=4m
+
+# ⚠️ CUIDADO: Verifique o dispositivo correto! dd pode apagar dados.
+```
+
+**3. Backup compactado (economiza espaço):**
+```bash
+# Compactar durante backup
+sudo dd if=/dev/sdb bs=4M status=progress | gzip > ~/backup-bts-$(date +%Y%m%d).img.gz
+
+# Estimar tempo: ~15-30 min para 32GB
+```
+
+### Restore do Backup
+
+**1. Restaurar imagem completa:**
+```bash
+# Linux - descompactar e gravar
+gunzip -c ~/backup-bts-20260418.img.gz | sudo dd of=/dev/sdb bs=4M status=progress
+
+# Ou se não estiver compactado
+sudo dd if=~/backup-bts-20260418.img of=/dev/sdb bs=4M status=progress
+```
+
+**2. Expandir partição após restore (se microSD maior):**
+```bash
+# Após bootar o Raspberry Pi
+sudo raspi-config
+# Selecionar: Advanced Options > Expand Filesystem
+sudo reboot
+```
+
+### Backup Usando Raspberry Pi Imager (Windows/Linux/macOS)
+
+**Mais fácil e recomendado:**
+
+1. Baixar [Raspberry Pi Imager](https://www.raspberrypi.com/software/)
+2. Inserir microSD no leitor
+3. Escolher: `CHOOSE OS > Use custom`
+4. Selecionar arquivo `.img` do backup
+5. Escolher o microSD de destino
+6. Clicar em `Write`
+
+### Backup Apenas das Configurações (Mais Rápido)
+
+```bash
+# Executar no Raspberry Pi
+# Criar diretório de backup
+mkdir -p ~/config-backup-$(date +%Y%m%d)
+cd ~/config-backup-$(date +%Y%m%d)
+
+# Copiar configurações de rede
+sudo cp /etc/dhcpcd.conf .
+sudo cp /etc/dnsmasq.conf .
+sudo cp /etc/hostapd/hostapd.conf .
+
+# Copiar serviços
+sudo cp /etc/systemd/system/bts.service .
+sudo cp /etc/systemd/system/mediamtx.service .
+
+# Copiar aplicação
+cp -r ~/app .
+
+# Compactar tudo
+cd ~
+tar -czf config-backup-$(date +%Y%m%d).tar.gz config-backup-$(date +%Y%m%d)/
+
+# Transferir para outro computador
+# Via SCP: scp pi@192.168.0.1:~/config-backup-*.tar.gz .
+```
+
+### Restore das Configurações
+
+```bash
+# No novo Raspberry Pi (após instalar Raspberry Pi OS)
+tar -xzf config-backup-20260418.tar.gz
+cd config-backup-20260418/
+
+# Restaurar rede
+sudo cp dhcpcd.conf /etc/
+sudo cp dnsmasq.conf /etc/
+sudo cp hostapd.conf /etc/
+
+# Restaurar serviços
+sudo cp bts.service /etc/systemd/system/
+sudo cp mediamtx.service /etc/systemd/system/
+
+# Restaurar aplicação
+cp -r app ~/
+
+# Recarregar serviços
+sudo systemctl daemon-reload
+sudo systemctl enable bts mediamtx dnsmasq
+sudo reboot
+```
+
+### Clonagem Direta (microSD para microSD)
+
+```bash
+# Com 2 leitores de cartão conectados
+# Identificar origem e destino
+lsblk
+
+# Clonar direto (mais rápido)
+sudo dd if=/dev/sdb of=/dev/sdc bs=4M status=progress
+
+# ⚠️ Confirme qual é origem e qual é destino!
+```
+
+### Ferramentas Alternativas
+
+**Win32 Disk Imager (Windows):**
+- Download: https://sourceforge.net/projects/win32diskimager/
+- Interface gráfica simples
+- Suporta backup e restore
+
+**Etcher (Multiplataforma):**
+- Download: https://www.balena.io/etcher/
+- Interface moderna
+- Validação automática
+
+**PiShrink (Linux - reduz tamanho do backup):**
+```bash
+# Reduzir imagem antes de backup
+wget https://raw.githubusercontent.com/Drewsif/PiShrink/master/pishrink.sh
+chmod +x pishrink.sh
+sudo ./pishrink.sh backup-bts.img backup-bts-shrunk.img
+```
+
+### Checklist de Backup
+
+- [ ] Identificar dispositivo correto (`lsblk` / `fdisk -l`)
+- [ ] Verificar espaço em disco disponível
+- [ ] Criar backup compactado (.img.gz)
+- [ ] Testar restore em microSD de teste
+- [ ] Armazenar backup em local seguro
+- [ ] Documentar data e versão do sistema
+- [ ] Backup recorrente (mensal recomendado)
+
+### Tamanhos Aproximados
+
+```
+MicroSD 32GB: ~10-15GB compactado
+MicroSD 64GB: ~15-25GB compactado
+Tempo backup: ~15-30 minutos
+Tempo restore: ~15-30 minutos
+```
+
+---
+
+## �📚 Documentos Relacionados
 
 - [Auto Start Info](AUTO_START_INFO.md) - Detalhes do serviço systemd
 - [Quick Start](QUICK_START.md) - Instalação do zero

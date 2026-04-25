@@ -7,3 +7,5 @@ mediamtx.yml
 .env
 *.log
 *.db
+*.ts
+*.txt
