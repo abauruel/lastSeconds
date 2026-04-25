@@ -1,0 +1,20 @@
+[Unit]
+Description=Better Seconds Record - HTTPS Server
+After=network.target
+
+[Service]
+Type=notify
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/app
+Environment="PATH=/home/pi/app/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="PYTHONPATH=/home/pi/app"
+ExecStartPre=/bin/bash -c 'if [ ! -f /home/pi/app/ssl/server.crt ]; then /home/pi/app/scripts/generate_ssl_cert.sh; fi'
+ExecStart=/home/pi/app/.venv/bin/gunicorn --config gunicorn_config_https.py capture3:app
+Restart=always
+RestartSec=10
+KillMode=mixed
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

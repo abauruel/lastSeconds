@@ -75,7 +75,7 @@ def init_status_routes(ffmpeg_manager=None):
             
             # 3. Verifica Stream1 (RAM disk primeiro, depois pendrive)
             stream1_ram = "/dev/shm/bts/stream1"
-            stream1_usb = "/media/pi/usb64gb/bts/stream1"
+            stream1_usb = os.environ.get("BTS_STREAM1_DIR", "/home/pi/app/recordings/stream1")
             try:
                 # Tenta primeiro no RAM disk (onde FFmpeg está gravando)
                 check_dirs = [(stream1_ram, "RAM"), (stream1_usb, "USB")]
@@ -118,7 +118,7 @@ def init_status_routes(ffmpeg_manager=None):
             
             # 4. Verifica Stream2 (RAM disk primeiro, depois pendrive)
             stream2_ram = "/dev/shm/bts/stream2"
-            stream2_usb = "/media/pi/usb64gb/bts/stream2"
+            stream2_usb = os.environ.get("BTS_STREAM2_DIR", "/home/pi/app/recordings/stream2")
             try:
                 # Tenta primeiro no RAM disk (onde FFmpeg está gravando)
                 check_dirs = [(stream2_ram, "RAM"), (stream2_usb, "USB")]

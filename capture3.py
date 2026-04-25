@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Configurações
-BASE_DIR = "/media/pi/usb64gb/bts"
+BASE_DIR = "/home/pi/app/recordings"
 BUFFER_DIR = os.path.join(BASE_DIR, "buffers")
 FINAL_DIR = os.path.join(BASE_DIR, "recordings")
 STREAM_DIR = os.path.join(BASE_DIR, "streams")

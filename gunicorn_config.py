@@ -1,14 +1,16 @@
 """
-Configuração do Gunicorn para Better Seconds Record
+Configuração do Gunicorn para Better Seconds Record - HTTP
 
 Usa preload_app para garantir que o FFMpegManager seja inicializado
 apenas uma vez no master process, não em cada worker.
+
+Para HTTPS, use gunicorn_config_https.py
 """
 
 import os
 import multiprocessing
 
-# Bind
+# Bind HTTP na porta 5000
 bind = "0.0.0.0:5000"
 
 # Workers (reduzido para 2 para evitar overhead desnecessário)

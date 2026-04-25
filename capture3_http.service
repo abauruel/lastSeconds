@@ -1,0 +1,19 @@
+[Unit]
+Description=Better Seconds Record - HTTP Server
+After=network.target
+
+[Service]
+Type=notify
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/app
+Environment="PATH=/home/pi/app/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="PYTHONPATH=/home/pi/app"
+ExecStart=/home/pi/app/.venv/bin/gunicorn --config gunicorn_config.py capture3:app
+Restart=always
+RestartSec=10
+KillMode=mixed
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

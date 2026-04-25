@@ -361,6 +361,6 @@ def start_uploader(stream_dir):
 
 if __name__ == "__main__":
     # Configurações
-    STREAM_DIR = "/media/pi/usb64gb/bts/streams"  # Diretório no pendrive USB
+    STREAM_DIR = "/home/pi/recordings/streams"  # Diretório no microSD
     
     start_uploader(STREAM_DIR)

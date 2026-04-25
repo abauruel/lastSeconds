@@ -21,6 +21,10 @@ import sys
 import os
 import argparse
 from datetime import datetime
+from dotenv import load_dotenv
+
+# Carrega variáveis de ambiente do arquivo .env
+load_dotenv()
 
 # Adiciona o diretório do app ao path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -62,7 +66,7 @@ def main():
     print()
     
     # Configurações de diretórios (mesmas do capture3.py)
-    BASE_DIR = "/media/pi/usb64gb/bts"
+    BASE_DIR = "/home/pi/app/recordings"
     BUFFER_DIR = os.path.join(BASE_DIR, "buffers")
     FINAL_DIR = os.path.join(BASE_DIR, "recordings")
     STREAM_DIR = os.path.join(BASE_DIR, "streams")

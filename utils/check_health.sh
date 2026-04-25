@@ -65,7 +65,7 @@ echo ""
 # 4. Últimos arquivos gravados - Stream1
 echo "📁 4. ÚLTIMOS ARQUIVOS GRAVADOS - STREAM1"
 echo "----------------------------------------"
-STREAM1_DIR="/media/pi/usb64gb/bts/stream1"
+STREAM1_DIR="/home/pi/recordings/stream1"
 if [ -d "$STREAM1_DIR" ]; then
     LATEST1=$(ls -t "$STREAM1_DIR"/video0_*.mp4 2>/dev/null | head -1)
     if [ -n "$LATEST1" ]; then
@@ -93,7 +93,7 @@ echo ""
 # 5. Últimos arquivos gravados - Stream2
 echo "📁 5. ÚLTIMOS ARQUIVOS GRAVADOS - STREAM2"
 echo "----------------------------------------"
-STREAM2_DIR="/media/pi/usb64gb/bts/stream2"
+STREAM2_DIR="/home/pi/recordings/stream2"
 if [ -d "$STREAM2_DIR" ]; then
     LATEST2=$(ls -t "$STREAM2_DIR"/video2_*.mp4 2>/dev/null | head -1)
     if [ -n "$LATEST2" ]; then
@@ -127,8 +127,8 @@ echo ""
 # 7. Uso de disco
 echo "💾 7. USO DE DISCO"
 echo "----------------------------------------"
-df -h /media/pi/usb64gb | tail -1 | awk '{print "Usado: " $3 " / " $2 " (" $5 ")"}'
-DISK_USAGE=$(df /media/pi/usb64gb | tail -1 | awk '{print $5}' | sed 's/%//')
+df -h /home/pi/recordings | tail -1 | awk '{print "Usado: " $3 " / " $2 " (" $5 ")"}'
+DISK_USAGE=$(df /home/pi/recordings | tail -1 | awk '{print $5}' | sed 's/%//')
 if [ $DISK_USAGE -lt 80 ]; then
     echo "✅ Espaço em disco OK ($DISK_USAGE%)"
 elif [ $DISK_USAGE -lt 90 ]; then
@@ -142,10 +142,10 @@ echo ""
 echo "📄 8. ÚLTIMAS MENSAGENS DE ERRO (FFmpeg)"
 echo "----------------------------------------"
 echo "--- Stream1 (últimas 5 linhas) ---"
-tail -5 /media/pi/usb64gb/bts/ffmpeg_device0.log 2>/dev/null || echo "Nenhum erro recente"
+tail -5 /home/pi/recordings/ffmpeg_device0.log 2>/dev/null || echo "Nenhum erro recente"
 echo ""
 echo "--- Stream2 (últimas 5 linhas) ---"
-tail -5 /media/pi/usb64gb/bts/ffmpeg_device2.log 2>/dev/null || echo "Nenhum erro recente"
+tail -5 /home/pi/recordings/ffmpeg_device2.log 2>/dev/null || echo "Nenhum erro recente"
 echo ""
 
 # 9. Temperatura do sistema (Raspberry Pi)

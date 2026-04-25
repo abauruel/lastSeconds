@@ -206,11 +206,11 @@ class FFMpegManager:
         if device_number == 0:
             PREFIX="video0"
             BUFFER_DIR = f"{self.buffer_dir_video0}"
-            DISK_DIR = os.environ.get("BTS_STREAM1_DIR", "/media/pi/usb64gb/bts/stream1")
+            DISK_DIR = os.environ.get("BTS_STREAM1_DIR", "/home/pi/recordings/stream1")
         else:
             PREFIX="video2"
             BUFFER_DIR = f"{self.buffer_dir_video2}"
-            DISK_DIR = os.environ.get("BTS_STREAM2_DIR", "/media/pi/usb64gb/bts/stream2")
+            DISK_DIR = os.environ.get("BTS_STREAM2_DIR", "/home/pi/recordings/stream2")
         
         # Cria diretório se não existir (importante para RAM)
         os.makedirs(DISK_DIR, exist_ok=True)
@@ -241,7 +241,7 @@ class FFMpegManager:
             (
                 f"[f=flv:onfail=ignore]"
                 f"rtmp://localhost/live/{STREAM_NAME}|"
-                f"[f=segment:segment_time=60:segment_atclocktime=1:segment_clocktime_offset=0:reset_timestamps=1:avoid_negative_ts=make_zero:segment_format=mpegts:strftime=1:segment_wrap=1400]"
+                f"[f=segment:segment_time=180:segment_atclocktime=1:segment_clocktime_offset=0:reset_timestamps=1:avoid_negative_ts=make_zero:segment_format=mpegts:strftime=1:segment_wrap=1400]"
                 f"{DISK_DIR}/{PREFIX}_%Y%m%d_%H%M%S.ts"
             )
         ]
@@ -266,7 +266,7 @@ class FFMpegManager:
             "-c:v", "copy",
             # Segmentos para gravação
             "-f", "segment",
-            "-segment_time", "60",
+            "-segment_time", "180",
             "-segment_atclocktime", "1",
             "-segment_clocktime_offset", "0",
             "-reset_timestamps", "1",
@@ -280,21 +280,21 @@ class FFMpegManager:
         """Inicia os processos ffmpeg com buffer circular."""
         if device_number == 0:
             print(f"Iniciando ffmpeg para device0 ({DEVICE})...")
-            with open("/media/pi/usb64gb/bts/ffmpeg_device0.log", "a") as logfile:
+            with open("/home/pi/recordings/ffmpeg_device0.log", "a") as logfile:
                 cmd = cmd_usb if input_source == "usb" else cmd_rtsp
                 self.ffmpeg_process_0 = subprocess.Popen(cmd, preexec_fn=os.setsid, stdout=logfile, stderr=logfile)
         else:
             print(f"Iniciando ffmpeg para device1 ({DEVICE})...")
-            with open("/media/pi/usb64gb/bts/ffmpeg_device2.log", "a") as logfile:
+            with open("/home/pi/recordings/ffmpeg_device2.log", "a") as logfile:
                 cmd = cmd_usb if input_source == "usb" else cmd_rtsp
                 self.ffmpeg_process_1 = subprocess.Popen(cmd, preexec_fn=os.setsid, stdout=logfile, stderr=logfile)
 
 
         print("Processos ffmpeg iniciados com buffer circular.")
         
-        # Inicia watchdog se ainda não estiver rodando
-        if not self.watchdog_running:
-            self.start_watchdog()
+        # Watchdog desabilitado
+        # if not self.watchdog_running:
+        #     self.start_watchdog()
 
     def stop_ffmpeg_processes(self):
         """Finaliza os processos ffmpeg e limpa processos zumbis de forma robusta."""
@@ -447,10 +447,10 @@ class FFMpegManager:
         
         # Verifica se está gerando arquivos recentemente (últimos 5 minutos)
         if device_number == 0:
-            disk_dir = os.environ.get("BTS_STREAM1_DIR", "/media/pi/usb64gb/bts/stream1")
+            disk_dir = os.environ.get("BTS_STREAM1_DIR", "/home/pi/recordings/stream1")
             prefix = "video0"
         else:
-            disk_dir = os.environ.get("BTS_STREAM2_DIR", "/media/pi/usb64gb/bts/stream2")
+            disk_dir = os.environ.get("BTS_STREAM2_DIR", "/home/pi/recordings/stream2")
             prefix = "video2"
         
         try:
@@ -492,7 +492,7 @@ class FFMpegManager:
         # Log de restart
         try:
             timestamp = datetime.now().isoformat()
-            log_file = "/media/pi/usb64gb/bts/ffmpeg_restart_log.txt"
+            log_file = "/home/pi/recordings/ffmpeg_restart_log.txt"
             with open(log_file, "a") as f:
                 f.write(f"{timestamp} - Restarting device {device_number}\n")
         except Exception as e:
@@ -688,8 +688,8 @@ class FFMpegManager:
         """Remove arquivos .ts e .mp4 com 0 bytes que indicam segmentos corrompidos."""
         try:
             cleaned_count = 0
-            stream1_dir = os.environ.get("BTS_STREAM1_DIR", "/media/pi/usb64gb/bts/stream1")
-            stream2_dir = os.environ.get("BTS_STREAM2_DIR", "/media/pi/usb64gb/bts/stream2")
+            stream1_dir = os.environ.get("BTS_STREAM1_DIR", "/home/pi/recordings/stream1")
+            stream2_dir = os.environ.get("BTS_STREAM2_DIR", "/home/pi/recordings/stream2")
             for disk_dir in [stream1_dir, stream2_dir]:
                 if not os.path.exists(disk_dir):
                     continue
@@ -836,10 +836,10 @@ class FFMpegManager:
             
             # Define o diretório baseado na câmera
             if cam_id == 0:
-                DISK_DIR = os.environ.get("BTS_STREAM1_DIR", "/media/pi/usb64gb/bts/stream1")
+                DISK_DIR = os.environ.get("BTS_STREAM1_DIR", "/home/pi/recordings/stream1")
                 PREFIX = "video0"
             else:
-                DISK_DIR = os.environ.get("BTS_STREAM2_DIR", "/media/pi/usb64gb/bts/stream2")
+                DISK_DIR = os.environ.get("BTS_STREAM2_DIR", "/home/pi/recordings/stream2")
                 PREFIX = "video2"
             
             print(f"DEBUG: DISK_DIR={DISK_DIR}, PREFIX={PREFIX}")
@@ -857,22 +857,42 @@ class FFMpegManager:
             segment_files = []
             if os.path.exists(DISK_DIR):
                 for filename in os.listdir(DISK_DIR):
-                    if filename.startswith(PREFIX) and (filename.endswith(".mp4") or filename.endswith(".ts")):
+                    # Permite arquivos com PREFIX ou arquivos consolidados sem PREFIX
+                    is_valid_file = (filename.startswith(PREFIX) or re.match(r'^\d{14}-\d{14}\.mp4$', filename))
+                    if is_valid_file and (filename.endswith(".mp4") or filename.endswith(".ts")):
+                        filepath = os.path.join(DISK_DIR, filename)
+                        file_time = None
+                        
                         try:
-                            # Parse do timestamp do nome do arquivo: video0_20260208_131022.mp4 ou .ts
-                            # Formato: PREFIX_YYYYMMDD_HHMMSS.mp4 ou .ts
-                            timestamp_part = filename.replace(f"{PREFIX}_", "").replace(".mp4", "").replace(".ts", "")
-                            file_time = datetime.strptime(timestamp_part, "%Y%m%d_%H%M%S")
+                            # Tenta 3 formatos diferentes:
+                            # 1. Arquivo consolidado com intervalo: YYYYMMDDHHMMSS-YYYYMMDDHHMMSS.mp4
+                            if re.match(r'^\d{14}-\d{14}\.mp4$', filename):
+                                start_part = filename.split('-')[0]
+                                file_time = datetime.strptime(start_part, "%Y%m%d%H%M%S")
+                                print(f"DEBUG: Arquivo consolidado detectado: {filename}, início: {file_time}")
                             
-                            filepath = os.path.join(DISK_DIR, filename)
+                            # 2. Arquivo consolidado .ts: PREFIX_YYYYMMDD_HHMMSS-HHMMSS_consolidated.ts
+                            elif '_consolidated.ts' in filename:
+                                # Formato: video2_20260404_071000-083500_consolidated.ts
+                                base = filename.replace(f"{PREFIX}_", "").replace("_consolidated.ts", "")
+                                # base agora é: 20260404_071000-083500
+                                date_time_part = base.split('-')[0]  # 20260404_071000
+                                file_time = datetime.strptime(date_time_part, "%Y%m%d_%H%M%S")
+                                print(f"DEBUG: Arquivo consolidado .ts detectado: {filename}, início: {file_time}")
+                            
+                            # 3. Formato padrão: PREFIX_YYYYMMDD_HHMMSS.mp4 ou .ts
+                            else:
+                                timestamp_part = filename.replace(f"{PREFIX}_", "").replace(".mp4", "").replace(".ts", "")
+                                file_time = datetime.strptime(timestamp_part, "%Y%m%d_%H%M%S")
                             
                             # Verifica se o arquivo está no range de busca
-                            if search_start <= file_time <= search_end:
+                            if file_time and search_start <= file_time <= search_end:
                                 segment_files.append((filepath, file_time))
+                                
                         except (ValueError, IndexError) as e:
                             # Se não conseguir parsear o nome, usa mtime como fallback
                             print(f"Aviso: não foi possível parsear timestamp do arquivo {filename}: {e}")
-                            file_mtime = os.path.getmtime(os.path.join(DISK_DIR, filename))
+                            file_mtime = os.path.getmtime(filepath)
                             file_time = datetime.fromtimestamp(file_mtime)
                             if search_start <= file_time <= search_end:
                                 segment_files.append((filepath, file_time))
@@ -889,17 +909,92 @@ class FFMpegManager:
             # Encontra o arquivo que contém o timestamp do evento
             target_file = None
             file_start_time = None
+            file_duration = None
             SEGMENT_DURATION_SECONDS = 60  # FFmpeg configurado com segment_time=60 (1 minuto)
             
+            # Lista de candidatos que contém o timestamp pelo nome, mas precisamos validar duração
+            candidates = []
             for filepath, file_time in segment_files:
-                # Cada arquivo tem 60 segundos (1 minuto)
-                file_end_time = file_time + timedelta(seconds=SEGMENT_DURATION_SECONDS)
-                # print(f"DEBUG: Verificando arquivo {os.path.basename(filepath)}: {file_time} até {file_end_time}")
+                filename = os.path.basename(filepath)
+                
+                # Determina o tempo de fim baseado no tipo de arquivo
+                # 1. Arquivo consolidado com intervalo: YYYYMMDDHHMMSS-YYYYMMDDHHMMSS.mp4
+                if re.match(r'^\d{14}-\d{14}\.mp4$', filename):
+                    end_part = filename.split('-')[1].replace('.mp4', '')
+                    file_end_time = datetime.strptime(end_part, "%Y%m%d%H%M%S")
+                    print(f"DEBUG: Arquivo consolidado MP4: {filename}, fim: {file_end_time.strftime('%H:%M:%S')}")
+                
+                # 2. Arquivo consolidado .ts: PREFIX_YYYYMMDD_HHMMSS-HHMMSS_consolidated.ts
+                elif '_consolidated.ts' in filename:
+                    # Formato: video2_20260404_071000-083500_consolidated.ts
+                    base = filename.replace(f"video2_", "").replace(f"video0_", "").replace("_consolidated.ts", "")
+                    # base agora é: 20260404_071000-083500
+                    end_time_part = base.split('-')[1]  # 083500
+                    date_part = base.split('_')[0]  # 20260404
+                    file_end_time = datetime.strptime(f"{date_part}_{end_time_part}", "%Y%m%d_%H%M%S")
+                    print(f"DEBUG: Arquivo consolidado TS: {filename}, fim: {file_end_time.strftime('%H:%M:%S')}")
+                
+                # 3. Arquivo padrão de 60s
+                else:
+                    file_end_time = file_time + timedelta(seconds=SEGMENT_DURATION_SECONDS)
+                
                 if file_time <= event_time <= file_end_time:
-                    target_file = filepath
-                    file_start_time = file_time
-                    print(f"DEBUG: Arquivo encontrado! {os.path.basename(filepath)}")
-                    break
+                    candidates.append((filepath, file_time))
+            
+            print(f"DEBUG: Encontrados {len(candidates)} candidatos que contêm o timestamp")
+            
+            # Ordena candidatos por prioridade:
+            # 1. Arquivos consolidados MP4 (maiores, mais confiáveis)
+            # 2. Arquivos maiores em geral
+            # Isso evita validar centenas de arquivos .ts pequenos/corrompidos antes dos consolidados
+            candidates_with_size = []
+            for filepath, file_time in candidates:
+                try:
+                    file_size = os.path.getsize(filepath)
+                    is_consolidated_mp4 = filepath.endswith('.mp4') and re.match(r'^\d{14}-\d{14}\.mp4$', os.path.basename(filepath))
+                    # Prioridade: consolidados primeiro, depois por tamanho
+                    priority = (1 if is_consolidated_mp4 else 0, file_size)
+                    candidates_with_size.append((filepath, file_time, priority))
+                except:
+                    candidates_with_size.append((filepath, file_time, (0, 0)))
+            
+            # Ordena por prioridade (consolidados e maiores primeiro)
+            candidates_with_size.sort(key=lambda x: x[2], reverse=True)
+            
+            # Valida candidatos na ordem de prioridade e escolhe o primeiro válido
+            for filepath, file_time, priority in candidates_with_size:
+                # Valida duração real do arquivo
+                try:
+                    probe_cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", filepath]
+                    probe_result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=30)
+                    
+                    if probe_result.returncode == 0 and probe_result.stdout.strip():
+                        candidate_duration = float(probe_result.stdout.strip())
+                        offset_in_candidate = (event_time - file_time).total_seconds()
+                        
+                        # Verifica se o evento realmente está dentro do arquivo (com sua duração real)
+                        if offset_in_candidate <= candidate_duration:
+                            # Candidato válido!
+                            # Preferência: arquivos consolidados (maiores) ou completos (próximos de 60s)
+                            # sobre arquivos pequenos/corrompidos
+                            if candidate_duration >= 30 or (candidate_duration >= 10 and offset_in_candidate + duration <= candidate_duration):
+                                target_file = filepath
+                                file_start_time = file_time
+                                file_duration = candidate_duration
+                                print(f"DEBUG: Arquivo validado! {os.path.basename(filepath)} (duração: {candidate_duration:.1f}s)")
+                                break
+                            else:
+                                print(f"DEBUG: Candidato {os.path.basename(filepath)} muito curto ({candidate_duration:.1f}s), buscando melhor alternativa...")
+                        else:
+                            print(f"DEBUG: Evento em {offset_in_candidate:.1f}s excede duração de {os.path.basename(filepath)} ({candidate_duration:.1f}s)")
+                except Exception as e:
+                    print(f"DEBUG: Erro ao validar {os.path.basename(filepath)}: {e}")
+                    continue
+            
+            if target_file:
+                print(f"DEBUG: Arquivo selecionado após validação: {os.path.basename(target_file)}")
+            else:
+                print(f"DEBUG: Nenhum candidato válido encontrado pelo nome, buscando alternativa...")
             
             if not target_file:
                 # Se não encontrar exato, pega o mais próximo que seja ANTERIOR ao evento
@@ -950,30 +1045,37 @@ class FFMpegManager:
                 return False
             
             # Valida integridade do arquivo verificando se pode ser lido
-            try:
-                print(f"DEBUG: Validando arquivo com ffprobe (timeout: 90s)...")
-                probe_cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", target_file]
-                probe_result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=90)
-                print(f"DEBUG: ffprobe returncode: {probe_result.returncode}")
-                
-                if probe_result.returncode != 0 or not probe_result.stdout.strip():
-                    print(f"ERRO: Arquivo {os.path.basename(target_file)} corrompido ou ilegível (ffprobe falhou)")
-                    print(f"  stderr: {probe_result.stderr[:200]}")
-                    return False
+            # Se já temos file_duration da validação anterior, use-a; caso contrário, valide agora
+            if file_duration is None:
+                try:
+                    print(f"DEBUG: Validando arquivo com ffprobe (timeout: 90s)...")
+                    probe_cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", target_file]
+                    probe_result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=90)
+                    print(f"DEBUG: ffprobe returncode: {probe_result.returncode}")
                     
-                file_duration = float(probe_result.stdout.strip())
-                print(f"DEBUG: Duração do arquivo: {file_duration:.2f}s")
-                
-                if file_duration < 10:  # Arquivo de 60s deveria ter pelo menos 10s de conteúdo válido
-                    print(f"AVISO: Arquivo {os.path.basename(target_file)} tem duração muito curta ({file_duration:.1f}s), pode estar corrompido")
+                    if probe_result.returncode != 0 or not probe_result.stdout.strip():
+                        print(f"ERRO: Arquivo {os.path.basename(target_file)} corrompido ou ilegível (ffprobe falhou)")
+                        print(f"  stderr: {probe_result.stderr[:200]}")
+                        return False
+                        
+                    file_duration = float(probe_result.stdout.strip())
+                    print(f"DEBUG: Duração do arquivo: {file_duration:.2f}s")
+                except subprocess.TimeoutExpired as e:
+                    print(f"ERRO: Timeout ao validar arquivo {os.path.basename(target_file)} após 90s")
+                    print(f"  Possível problema de I/O no disco ou arquivo corrompido")
                     return False
-            except subprocess.TimeoutExpired as e:
-                print(f"ERRO: Timeout ao validar arquivo {os.path.basename(target_file)} após 90s")
-                print(f"  Possível problema de I/O no disco ou arquivo corrompido")
-                return False
-            except (ValueError, Exception) as e:
-                print(f"ERRO: Falha ao validar arquivo {os.path.basename(target_file)}: {e}")
-                return False
+                except (ValueError, Exception) as e:
+                    print(f"ERRO: Falha ao validar arquivo {os.path.basename(target_file)}: {e}")
+                    return False
+            else:
+                print(f"DEBUG: Duração já validada anteriormente: {file_duration:.2f}s")
+            
+            if file_duration < 3:  # Menor que 3s é provavelmente inútil
+                print(f"AVISO: Arquivo {os.path.basename(target_file)} tem duração muito curta ({file_duration:.1f}s), pode estar corrompido")
+                print(f"       Tentando buscar arquivo alternativo...")
+                # Não retorna False imediatamente, deixa a lógica abaixo buscar alternativa
+            elif file_duration < 10:
+                print(f"AVISO: Arquivo {os.path.basename(target_file)} tem duração curta ({file_duration:.1f}s)")
             
             # Calcula o offset dentro do arquivo
             # IMPORTANTE: Com reset_timestamps=1 no FFmpeg, cada arquivo inicia em 0
@@ -982,6 +1084,52 @@ class FFMpegManager:
             offset_in_file = (event_time - file_start_time).total_seconds()
             seconds_before = duration  # Toda a duração antes do evento
             
+            # CRITICAL: Valida se o evento está dentro dos limites do arquivo
+            # (arquivos corrompidos/pequenos podem ter duração menor que esperado)
+            # OU se o arquivo é muito curto para ser útil (< 10s)
+            if offset_in_file > file_duration or file_duration < 10:
+                if offset_in_file > file_duration:
+                    print(f"ERRO: Evento em {offset_in_file:.1f}s está além do fim do arquivo ({file_duration:.1f}s)")
+                else:
+                    print(f"AVISO: Arquivo muito curto ({file_duration:.1f}s) pode não conter conteúdo suficiente")
+                print(f"      Buscando arquivo alternativo...")
+                
+                found_alternative = False
+                # Busca de forma mais flexível: qualquer arquivo que possa conter o evento
+                for filepath, file_time in segment_files:
+                    # Calcula offset neste arquivo candidato
+                    candidate_offset = (event_time - file_time).total_seconds()
+                    
+                    # Valida se é um candidato plausível (offset positivo e razoável)
+                    if 0 <= candidate_offset <= SEGMENT_DURATION_SECONDS * 1.5:  # Margem de 50%
+                        # Revalida duração deste arquivo candidato
+                        try:
+                            probe_result = subprocess.run(
+                                ["ffprobe", "-v", "error", "-show_entries", "format=duration", 
+                                 "-of", "default=noprint_wrappers=1:nokey=1", filepath],
+                                capture_output=True, text=True, timeout=90
+                            )
+                            if probe_result.returncode == 0 and probe_result.stdout.strip():
+                                candidate_duration = float(probe_result.stdout.strip())
+                                
+                                # Verifica se o evento cabe dentro deste arquivo
+                                if candidate_offset <= candidate_duration:
+                                    target_file = filepath
+                                    file_start_time = file_time
+                                    offset_in_file = candidate_offset
+                                    file_duration = candidate_duration
+                                    print(f"      ✓ Arquivo alternativo encontrado: {os.path.basename(target_file)}")
+                                    print(f"        Offset: {offset_in_file:.1f}s, Duração: {file_duration:.1f}s")
+                                    found_alternative = True
+                                    break
+                        except Exception as e:
+                            print(f"      Erro ao validar {os.path.basename(filepath)}: {e}")
+                            continue
+                
+                if not found_alternative:
+                    print(f"ERRO: Não foi possível encontrar nenhum arquivo válido com o evento")
+                    return False
+                    
             # EDGE CASE: Evento ocorre muito cedo no arquivo (menos de 'duration' segundos do início)
             # Precisamos buscar conteúdo do arquivo ANTERIOR para completar a duração
             previous_file = None
@@ -1050,15 +1198,18 @@ class FFMpegManager:
             effective_duration = duration
             if needs_previous_file and not previous_file:
                 # Só há conteúdo desde o início do arquivo até o evento
-                effective_duration = offset_in_file
+                effective_duration = min(offset_in_file, file_duration)
                 print(f"      Ajustando duração para {effective_duration:.1f}s (conteúdo disponível desde início do arquivo)")
             
             # Verifica se há conteúdo suficiente no arquivo (para eventos no FINAL)
-            available_content = SEGMENT_DURATION_SECONDS - offset_seconds
+            # CRITICAL: Usa file_duration real, não SEGMENT_DURATION_SECONDS teórico
+            available_content = file_duration - offset_seconds
             needs_concatenation = available_content < effective_duration
             next_file = None
             
-            if needs_concatenation:
+            # AJUSTE: Se o arquivo é muito pequeno e não tem conteúdo suficiente, 
+            # reduz a duração efetiva ao invés de falhar
+            if needs_concatenation and available_content > 0:
                 print(f"INFO: Evento próximo ao final. Disponível: {available_content:.1f}s, necessário: {effective_duration}s")
                 print(f"      Buscando próximo segmento para concatenação...")
                 
@@ -1077,20 +1228,24 @@ class FFMpegManager:
                     # Verifica se o próximo arquivo não é o segmento atual
                     next_age = time.time() - os.path.getmtime(next_file_path)
                     if next_age < 15:
-                        print(f"ERRO: Próximo arquivo muito recente ({next_age:.1f}s), aguardar mais tempo")
-                        return False
-                    next_file = next_file_path
-                    print(f"      Próximo segmento encontrado: {os.path.basename(next_file)}")
+                        print(f"AVISO: Próximo arquivo muito recente ({next_age:.1f}s), usando apenas conteúdo disponível")
+                        effective_duration = available_content
+                        needs_concatenation = False
+                    else:
+                        next_file = next_file_path
+                        print(f"      Próximo segmento encontrado: {os.path.basename(next_file)}")
                 else:
-                    print(f"ERRO: Próximo segmento não encontrado (tentou .mp4 e .ts)")
-                    return False
-            
-            # Verifica se o evento está realmente dentro do arquivo (com margem para o clipe)
-            if not needs_concatenation and not needs_previous_file and offset_seconds > (SEGMENT_DURATION_SECONDS - effective_duration):
-                print(f"ERRO: Offset {offset_seconds:.2f}s muito grande para arquivo de {SEGMENT_DURATION_SECONDS}s (duração: {effective_duration}s)")
+                    print(f"AVISO: Próximo segmento não encontrado, usando conteúdo disponível ({available_content:.1f}s)")
+                    effective_duration = available_content
+                    needs_concatenation = False
+            elif available_content <= 0:
+                print(f"ERRO: Offset {offset_seconds:.2f}s está além ou no fim do arquivo (duração: {file_duration:.2f}s)")
                 return False
             
+            # DEBUG: Validações já feitas acima com file_duration real
             print(f"DEBUG: Offset calculado: {offset_seconds:.2f}s no arquivo {os.path.basename(target_file)}")
+            print(f"DEBUG: Duração efetiva a extrair: {effective_duration:.2f}s")
+            print(f"DEBUG: Conteúdo disponível: {available_content:.2f}s")
             
             # Cria o diretório de saída
             date_folder = event_time.strftime("%Y%m%d")
@@ -1224,18 +1379,18 @@ class FFMpegManager:
                 
                 try:
                     # Parte 1: do offset até o final do primeiro arquivo
-                    cmd_part1 = ["ffmpeg", "-y", "-i", target_file, "-ss", str(offset_seconds), "-c:v", "copy", temp_part1]
+                    cmd_part1 = ["ffmpeg", "-y", "-err_detect", "ignore_err", "-i", target_file, "-ss", str(offset_seconds), "-c:v", "copy", temp_part1]
                     result1 = subprocess.run(cmd_part1, capture_output=True, text=True, timeout=90)
                     if result1.returncode != 0:
-                        print(f"ERRO ao extrair parte 1: {result1.stderr}")
+                        print(f"ERRO ao extrair parte 1: {result1.stderr[:300]}")
                         return False
                     
                     # Parte 2: do início do próximo arquivo até completar a duração
                     remaining_duration = effective_duration - available_content
-                    cmd_part2 = ["ffmpeg", "-y", "-i", next_file, "-t", str(remaining_duration), "-c:v", "copy", temp_part2]
+                    cmd_part2 = ["ffmpeg", "-y", "-err_detect", "ignore_err", "-i", next_file, "-t", str(remaining_duration), "-c:v", "copy", temp_part2]
                     result2 = subprocess.run(cmd_part2, capture_output=True, text=True, timeout=90)
                     if result2.returncode != 0:
-                        print(f"ERRO ao extrair parte 2: {result2.stderr}")
+                        print(f"ERRO ao extrair parte 2: {result2.stderr[:300]}")
                         return False
                     
                     # Cria lista para concatenação
@@ -1270,6 +1425,7 @@ class FFMpegManager:
                 # CENÁRIO 3: Evento normal no meio do arquivo - extração simples
                 extract_cmd = [
                     "ffmpeg", "-y",
+                    "-err_detect", "ignore_err",  # Ignora erros de decodificação/pacotes corrompidos
                     "-i", target_file,
                     "-ss", str(offset_seconds),
                     "-t", str(effective_duration),
@@ -1280,11 +1436,12 @@ class FFMpegManager:
                 ]
                 print(f"Extraindo vídeo: arquivo={os.path.basename(target_file)}, offset={offset_seconds:.2f}s, duração={effective_duration}s")
                 print(f"      Recuperando {effective_duration}s ANTES do evento (de {offset_seconds:.2f}s até {offset_seconds + effective_duration:.2f}s)")
-                result = subprocess.run(extract_cmd, capture_output=True, text=True)
+                result = subprocess.run(extract_cmd, capture_output=True, text=True, timeout=120)
             
             if result.returncode != 0:
-                print(f"ERRO FFmpeg: {result.stderr}")
+                print(f"ERRO FFmpeg: {result.stderr[:500]}")
             
+            # Aceita arquivo se for gerado com tamanho razoável, mesmo com warnings
             if result.returncode == 0 and os.path.exists(output_file) and os.path.getsize(output_file) > 10000:
                 # Gera thumbnail
                 generateThumb(output_file)
@@ -1369,14 +1526,17 @@ class FFMpegManager:
                         finally:
                             fcntl.flock(f.fileno(), fcntl.LOCK_UN)
                 
-                # Processa TODOS os eventos pending (sem limite)
+                # Processa TODOS os eventos pending e failed (sem limite)
                 for line in lines:
                     line = line.strip()
                     if line:
                         try:
                             event = json.loads(line)
-                            if event.get("status") == "pending":
+                            # Processa pending e failed (reprocessa as falhas)
+                            if event.get("status") in ["pending", "failed"]:
                                 duration = event.get("duration", 10)  # Padrão 10s se não especificado
+                                print(f"\n[Background] Processando evento: {event['timestamp_iso']}, cam_id={event['cam_id']}, status={event.get('status')}")
+                                
                                 success = self._extract_video_from_timestamp(
                                     timestamp_epoch=event["timestamp_epoch"],
                                     cam_id=event["cam_id"],
@@ -1386,9 +1546,11 @@ class FFMpegManager:
                                 if success:
                                     self._update_event_status(timestamp_file, event, "processed")
                                     processed += 1
+                                    print(f"[Background] ✓ Sucesso!")
                                 else:
                                     self._update_event_status(timestamp_file, event, "failed")
                                     failed += 1
+                                    print(f"[Background] ✗ Falhou!")
                                     
                                 # Log de progresso
                                 if (processed + failed) % 10 == 0:

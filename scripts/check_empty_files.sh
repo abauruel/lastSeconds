@@ -5,8 +5,8 @@ echo "========================================="
 echo "Verificando arquivos vazios (.ts)"
 echo "========================================="
 
-STREAM1="/media/pi/usb64gb/bts/stream1"
-STREAM2="/media/pi/usb64gb/bts/stream2"
+STREAM1="/home/pi/recordings/stream1"
+STREAM2="/home/pi/recordings/stream2"
 
 count=0
 

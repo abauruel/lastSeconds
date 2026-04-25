@@ -5,7 +5,7 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 import os
 
 # Database stored on USB drive
-DATABASE_PATH = "/media/pi/usb64gb/bts/recordings.db"
+DATABASE_PATH = "/home/pi/recordings/recordings.db"
 DATABASE_URL = f"sqlite:///{DATABASE_PATH}"
 engine = create_engine(DATABASE_URL)
 

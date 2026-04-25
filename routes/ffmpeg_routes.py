@@ -197,7 +197,7 @@ def init_ffmpeg_routes(ffmpeg_manager):
     def list_video_dates():
         """Lista todas as datas com vídeos processados disponíveis"""
         try:
-            base_path = "/media/pi/usb64gb/bts/streams"
+            base_path = "/home/pi/recordings/streams"
             
             if not os.path.exists(base_path):
                 return jsonify({
@@ -266,7 +266,7 @@ def init_ffmpeg_routes(ffmpeg_manager):
                     "message": "Data inválida"
                 }), 400
             
-            date_path = f"/media/pi/usb64gb/bts/streams/{date}"
+            date_path = f"/home/pi/recordings/streams/{date}"
             
             if not os.path.exists(date_path):
                 return jsonify({
@@ -334,7 +334,7 @@ def init_ffmpeg_routes(ffmpeg_manager):
                     "message": "Nome de arquivo inválido"
                 }), 400
             
-            file_path = f"/media/pi/usb64gb/bts/streams/{date}/{filename}"
+            file_path = f"/home/pi/recordings/streams/{date}/{filename}"
             
             if not os.path.exists(file_path):
                 return jsonify({
