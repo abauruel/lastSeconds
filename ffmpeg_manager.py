@@ -267,7 +267,7 @@ class FFMpegManager:
         print(f"Iniciando FFmpeg: device={DEVICE}, prefix={PREFIX}, dir={DISK_DIR}")
 
         cmd_usb = [
-            "ffmpeg", "-rtbufsize","256M",
+            "ffmpeg", "-rtbufsize","128M",  # 16s @ 8MB/s - otimizado para o bitrate
 	    "-hide_banner","-loglevel","warning","-stats","-stats_period","30",
 	    "-fflags", "+genpts",
             "-f", "v4l2", "-input_format", "h264", "-video_size", "1280x720", "-r", "25", 
@@ -294,7 +294,7 @@ class FFMpegManager:
             "-timeout", "10000000",  # 10s timeout para operações de rede
             # Buffer e protocolo RTSP otimizado
             "-rtsp_transport", "tcp",  # TCP é mais confiável que UDP
-            "-rtbufsize", "256M",  # Buffer otimizado para o bitrate esperado
+            "-rtbufsize", "128M",  # 16s @ 8MB/s - otimizado para bitrate 6-8MB/s @ 25fps
             "-max_delay", "2000000",  # 2s de delay máximo (mais tolerante)
             "-hide_banner", "-loglevel", "warning", "-stats", "-stats_period", "30",
             # Flags de entrada com tratamento de erros
