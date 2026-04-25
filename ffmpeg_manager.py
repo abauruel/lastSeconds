@@ -48,6 +48,47 @@ class FFMpegManager:
         self.last_restart_attempt = {0: 0, 1: 0}
         self.restart_cooldown_seconds = 10
     
+    def _rotate_logs(self, log_dir, device_prefix, max_size_mb=5, max_files=3):
+        """Rotaciona logs para evitar uso excessivo de espaço no USB.
+        
+        Args:
+            log_dir: Diretório onde os logs estão armazenados
+            device_prefix: Prefixo do arquivo (ex: 'device0', 'device2')
+            max_size_mb: Tamanho máximo em MB antes de rotacionar
+            max_files: Número máximo de arquivos antigos a manter
+        """
+        try:
+            # Lista todos os logs deste dispositivo
+            pattern = f"{device_prefix}_*.log"
+            log_files = sorted(
+                [f for f in os.listdir(log_dir) if f.startswith(device_prefix) and f.endswith('.log')],
+                key=lambda x: os.path.getmtime(os.path.join(log_dir, x)),
+                reverse=True  # Mais recente primeiro
+            )
+            
+            # Remove logs além do limite de arquivos
+            if len(log_files) > max_files:
+                for old_log in log_files[max_files:]:
+                    old_log_path = os.path.join(log_dir, old_log)
+                    try:
+                        os.remove(old_log_path)
+                        print(f"  🗑️  Log antigo removido: {old_log}")
+                    except Exception as e:
+                        print(f"  ⚠️  Erro ao remover log {old_log}: {e}")
+            
+            # Verifica tamanho dos logs existentes
+            for log_file in log_files[:max_files]:
+                log_path = os.path.join(log_dir, log_file)
+                try:
+                    size_mb = os.path.getsize(log_path) / (1024 * 1024)
+                    if size_mb > max_size_mb:
+                        print(f"  ⚠️  Log {log_file} excede {max_size_mb}MB ({size_mb:.1f}MB)")
+                except Exception:
+                    pass
+                    
+        except Exception as e:
+            print(f"Erro ao rotacionar logs: {e}")
+    
     def detect_usb_cameras(self):
         """
         Detecta dinamicamente os dispositivos de câmera USB.
@@ -227,8 +268,7 @@ class FFMpegManager:
 
         cmd_usb = [
             "ffmpeg", "-rtbufsize","256M",
-	    "-hide_banner","-loglevel","error",
-        # "-report","-benchmark_all","-stats_period","5",
+	    "-hide_banner","-loglevel","warning","-stats","-stats_period","30",
 	    "-fflags", "+genpts",
             "-f", "v4l2", "-input_format", "h264", "-video_size", "1280x720", "-r", "25", 
             "-i", f"{DEVICE}",
@@ -251,8 +291,7 @@ class FFMpegManager:
             "-rtsp_transport", "tcp",  # TCP é mais confiável que UDP
             "-rtbufsize", "512M",  # Buffer maior para evitar perda de pacotes
             "-max_delay", "500000",  # 500ms de delay máximo
-            "-hide_banner", "-loglevel", "error",
-            # "-report", "-benchmark_all", "-stats_period", "5",  # Descomente para debug
+            "-hide_banner", "-loglevel", "warning", "-stats", "-stats_period", "30",
             # Flags de entrada
             "-fflags", "+genpts+discardcorrupt",
             "-analyzeduration", "5000000",  # 5s para analisar stream
@@ -278,14 +317,24 @@ class FFMpegManager:
         ]
 
         """Inicia os processos ffmpeg com buffer circular."""
+        # Configura logs no USB com rotação automática
+        log_base_dir = "/media/pi/usb64gb/bts/logs/ffmpeg"
+        os.makedirs(log_base_dir, exist_ok=True)
+        
         if device_number == 0:
             print(f"Iniciando ffmpeg para device0 ({DEVICE})...")
-            with open("/home/pi/recordings/ffmpeg_device0.log", "a") as logfile:
+            log_file = os.path.join(log_base_dir, f"device0_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
+            self._rotate_logs(log_base_dir, "device0", max_size_mb=5, max_files=3)
+            
+            with open(log_file, "a") as logfile:
                 cmd = cmd_usb if input_source == "usb" else cmd_rtsp
                 self.ffmpeg_process_0 = subprocess.Popen(cmd, preexec_fn=os.setsid, stdout=logfile, stderr=logfile)
         else:
             print(f"Iniciando ffmpeg para device1 ({DEVICE})...")
-            with open("/home/pi/recordings/ffmpeg_device2.log", "a") as logfile:
+            log_file = os.path.join(log_base_dir, f"device2_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
+            self._rotate_logs(log_base_dir, "device2", max_size_mb=5, max_files=3)
+            
+            with open(log_file, "a") as logfile:
                 cmd = cmd_usb if input_source == "usb" else cmd_rtsp
                 self.ffmpeg_process_1 = subprocess.Popen(cmd, preexec_fn=os.setsid, stdout=logfile, stderr=logfile)
 
