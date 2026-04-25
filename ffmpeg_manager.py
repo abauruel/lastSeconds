@@ -287,13 +287,19 @@ class FFMpegManager:
         ]
         cmd_rtsp = [
             "ffmpeg",
+            # Reconexão automática para resiliência
+            "-reconnect", "1",
+            "-reconnect_streamed", "1",
+            "-reconnect_delay_max", "5",
+            "-timeout", "10000000",  # 10s timeout para operações de rede
             # Buffer e protocolo RTSP otimizado
             "-rtsp_transport", "tcp",  # TCP é mais confiável que UDP
-            "-rtbufsize", "512M",  # Buffer maior para evitar perda de pacotes
-            "-max_delay", "500000",  # 500ms de delay máximo
+            "-rtbufsize", "256M",  # Buffer otimizado para o bitrate esperado
+            "-max_delay", "2000000",  # 2s de delay máximo (mais tolerante)
             "-hide_banner", "-loglevel", "warning", "-stats", "-stats_period", "30",
-            # Flags de entrada
-            "-fflags", "+genpts+discardcorrupt",
+            # Flags de entrada com tratamento de erros
+            "-fflags", "+genpts+discardcorrupt+igndts",
+            "-err_detect", "ignore_err",  # Continua mesmo com erros menores
             "-analyzeduration", "5000000",  # 5s para analisar stream
             "-probesize", "10000000",  # 10MB para detectar propriedades
             "-i", f"{DEVICE}",
