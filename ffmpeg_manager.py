@@ -292,9 +292,9 @@ class FFMpegManager:
 
         print("Processos ffmpeg iniciados com buffer circular.")
         
-        # Watchdog desabilitado
-        # if not self.watchdog_running:
-        #     self.start_watchdog()
+        # Inicia watchdog automaticamente para monitorar saúde dos processos
+        if not self.watchdog_running:
+            self.start_watchdog()
 
     def stop_ffmpeg_processes(self):
         """Finaliza os processos ffmpeg e limpa processos zumbis de forma robusta."""
@@ -489,12 +489,15 @@ class FFMpegManager:
         """
         print(f"🔄 Reiniciando processo FFmpeg para device{device_number}...")
         
-        # Log de restart
+        # Log de restart com mais detalhes
         try:
             timestamp = datetime.now().isoformat()
             log_file = "/home/pi/recordings/ffmpeg_restart_log.txt"
+            input_source = self.input_sources.get(device_number, "unknown")
+            device_path = self.device_paths.get(device_number, "unknown")
+            
             with open(log_file, "a") as f:
-                f.write(f"{timestamp} - Restarting device {device_number}\n")
+                f.write(f"{timestamp} - Restarting device {device_number} | Source: {input_source} | Path: {device_path}\n")
         except Exception as e:
             print(f"Aviso: Não foi possível logar restart: {e}")
         
@@ -645,7 +648,7 @@ class FFMpegManager:
     
     def _watchdog_loop(self):
         """Loop principal do watchdog que monitora os processos."""
-        check_interval = 15  # Verifica a cada 15 segundos
+        check_interval = 30  # Verifica a cada 30 segundos (evita falsos positivos)
         
         while self.watchdog_running:
             try:
