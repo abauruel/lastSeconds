@@ -287,12 +287,8 @@ class FFMpegManager:
         ]
         cmd_rtsp = [
             "ffmpeg",
-            # Reconexão automática para resiliência
-            "-reconnect", "1",
-            "-reconnect_streamed", "1",
-            "-reconnect_delay_max", "5",
-            "-timeout", "10000000",  # 10s timeout para operações de rede
-            # Buffer e protocolo RTSP otimizado
+            # Timeout e protocolo RTSP otimizado
+            "-timeout", "10000000",  # 10s timeout para operações de rede (microsegundos)
             "-rtsp_transport", "tcp",  # TCP é mais confiável que UDP
             "-rtbufsize", "128M",  # 16s @ 8MB/s - otimizado para bitrate 6-8MB/s @ 25fps
             "-max_delay", "2000000",  # 2s de delay máximo (mais tolerante)
@@ -907,9 +903,10 @@ class FFMpegManager:
             print(f"DEBUG: event_time={event_time}")
             
             # Busca o arquivo de segmento que contém o timestamp
-            # Segmentos de 1 minuto, busca 6 horas antes e 1 minuto depois
+            # Segmentos de 1 minuto, busca 6 horas antes e 5 minutos depois
+            # (5 min depois para capturar arquivos alternativos em caso de arquivo corrompido)
             search_start = event_time - timedelta(hours=6)
-            search_end = event_time + timedelta(minutes=1)
+            search_end = event_time + timedelta(minutes=5)  # Expandido de 1min para 5min
             
             # Lista todos os arquivos de segmento do disco (suporta .mp4 e .ts)
             segment_files = []
@@ -955,6 +952,57 @@ class FFMpegManager:
                             if search_start <= file_time <= search_end:
                                 segment_files.append((filepath, file_time))
             
+            # Para camera 0 (stream1), busca também no diretório de referência se configurado
+            # (adiciona aos arquivos já encontrados no diretório padrão)
+            # Variável de ambiente: REFERENCE_VIDEO_DIR_PATTERN (opcional)
+            # Exemplo: REFERENCE_VIDEO_DIR_PATTERN="/media/pi/usb64gb/nfs_repository/EF000000060B2747/schedule/{date}"
+            # O placeholder {date} será substituído pelo formato YYYYMMDD
+            if cam_id == 0:
+                ref_dir_pattern = os.environ.get("REFERENCE_VIDEO_DIR_PATTERN", "")
+                
+                if ref_dir_pattern:
+                    # Formata a data no formato YYYYMMDD
+                    event_date = event_time.strftime("%Y%m%d")
+                    ref_dir = ref_dir_pattern.replace("{date}", event_date)
+                    
+                    if os.path.exists(ref_dir):
+                        print(f"DEBUG: Buscando também no diretório de referência: {ref_dir}")
+                        ref_files_count = 0
+                        
+                        for filename in os.listdir(ref_dir):
+                            # Formato: HHMMSS-vv-1.mp4 (ex: 071225-vv-1.mp4)
+                            if filename.endswith('.mp4') and '-vv-' in filename:
+                                filepath = os.path.join(ref_dir, filename)
+                                
+                                try:
+                                    # Extrai o timestamp do nome do arquivo (HHMMSS)
+                                    time_part = filename.split('-')[0]  # 071225
+                                    
+                                    if len(time_part) == 6 and time_part.isdigit():
+                                        # Constrói datetime com a data do evento + hora do arquivo
+                                        hour = int(time_part[0:2])
+                                        minute = int(time_part[2:4])
+                                        second = int(time_part[4:6])
+                                        
+                                        file_time = event_time.replace(hour=hour, minute=minute, second=second, microsecond=0)
+                                        
+                                        # Verifica se o arquivo está no range de busca
+                                        if search_start <= file_time <= search_end:
+                                            segment_files.append((filepath, file_time))
+                                            ref_files_count += 1
+                                            print(f"DEBUG: Arquivo de referência adicionado: {filename} -> {file_time}")
+                                            
+                                except (ValueError, IndexError) as e:
+                                    print(f"DEBUG: Não foi possível parsear {filename}: {e}")
+                                    continue
+                        
+                        if ref_files_count > 0:
+                            print(f"DEBUG: Adicionados {ref_files_count} arquivo(s) do diretório de referência")
+                    else:
+                        print(f"DEBUG: Diretório de referência não existe: {ref_dir}")
+                else:
+                    print(f"DEBUG: REFERENCE_VIDEO_DIR_PATTERN não configurado, usando apenas diretório padrão")
+            
             if not segment_files:
                 print(f"Nenhum arquivo de segmento encontrado para o timestamp {event_time}")
                 return False
@@ -992,7 +1040,27 @@ class FFMpegManager:
                     file_end_time = datetime.strptime(f"{date_part}_{end_time_part}", "%Y%m%d_%H%M%S")
                     print(f"DEBUG: Arquivo consolidado TS: {filename}, fim: {file_end_time.strftime('%H:%M:%S')}")
                 
-                # 3. Arquivo padrão de 60s
+                # 3. Arquivo de referência: HHMMSS-vv-1.mp4
+                elif re.match(r'^\d{6}-vv-\d+\.mp4$', filename):
+                    # Para arquivos de referência, precisa usar ffprobe para obter duração
+                    try:
+                        probe_cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", 
+                                   "-of", "default=noprint_wrappers=1:nokey=1", filepath]
+                        probe_result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=30)
+                        
+                        if probe_result.returncode == 0 and probe_result.stdout.strip():
+                            ref_duration = float(probe_result.stdout.strip())
+                            file_end_time = file_time + timedelta(seconds=ref_duration)
+                            print(f"DEBUG: Arquivo de referência: {filename}, duração: {ref_duration:.1f}s, fim: {file_end_time.strftime('%H:%M:%S')}")
+                        else:
+                            # Se ffprobe falhar, assume duração de 3 minutos (típico dos arquivos de referência)
+                            file_end_time = file_time + timedelta(minutes=3)
+                            print(f"DEBUG: Arquivo de referência (duração assumida): {filename}, fim: {file_end_time.strftime('%H:%M:%S')}")
+                    except Exception as e:
+                        print(f"DEBUG: Erro ao obter duração de {filename}: {e}, assumindo 3 minutos")
+                        file_end_time = file_time + timedelta(minutes=3)
+                
+                # 4. Arquivo padrão de 60s
                 else:
                     file_end_time = file_time + timedelta(seconds=SEGMENT_DURATION_SECONDS)
                 
@@ -1481,18 +1549,187 @@ class FFMpegManager:
                     
             else:
                 # CENÁRIO 3: Evento normal no meio do arquivo - extração simples
-                extract_cmd = [
-                    "ffmpeg", "-y",
-                    "-err_detect", "ignore_err",  # Ignora erros de decodificação/pacotes corrompidos
-                    "-i", target_file,
-                    "-ss", str(offset_seconds),
-                    "-t", str(effective_duration),
-                    "-c:v", "copy",
-                    "-avoid_negative_ts", "make_zero",
-                    "-movflags", "+faststart",
-                    output_file
-                ]
-                print(f"Extraindo vídeo: arquivo={os.path.basename(target_file)}, offset={offset_seconds:.2f}s, duração={effective_duration}s")
+                
+                # Detecta se é arquivo de referência (HEVC) que precisa de re-encoding
+                is_reference_file = re.match(r'^\d{6}-vv-\d+\.mp4$', os.path.basename(target_file))
+                needs_reencode = False
+                
+                if is_reference_file:
+                    print(f"DEBUG: Arquivo de referência detectado, verificando codec...")
+                    # Verifica se é HEVC e se tem pixel format válido
+                    probe_cmd = ["ffprobe", "-v", "error", "-select_streams", "v:0", 
+                                "-show_entries", "stream=codec_name,pix_fmt", 
+                                "-of", "default=noprint_wrappers=1", target_file]
+                    try:
+                        probe_result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=10)
+                        codec_info = probe_result.stdout
+                        
+                        if "hevc" in codec_info.lower():
+                            print(f"DEBUG: Codec HEVC detectado")
+                        
+                        # Verifica se tem pixel format válido
+                        if "pix_fmt=unknown" in codec_info or "pix_fmt=none" in codec_info or "pix_fmt=" not in codec_info:
+                            print(f"ERRO: Arquivo HEVC com pixel format inválido/desconhecido")
+                            print(f"      Buscando arquivo alternativo...")
+                            
+                            original_target = target_file
+                            found_alternative = False
+                            
+                            # Busca alternativa entre outros arquivos de referência
+                            print(f"      Buscando alternativa entre {len(segment_files)} arquivos...")
+                            
+                            # Cria lista de candidatos com prioridade
+                            candidates_with_priority = []
+                            for alt_filepath, alt_file_time in segment_files:
+                                if alt_filepath == original_target:
+                                    continue  # Pula o arquivo corrompido
+                                
+                                alt_filename = os.path.basename(alt_filepath)
+                                if not re.match(r'^\d{6}-vv-\d+\.mp4$', alt_filename):
+                                    continue  # Só considera arquivos de referência
+                                
+                                # Calcula offset temporal
+                                alt_offset = (event_time - alt_file_time).total_seconds()
+                                time_distance = abs(alt_offset)
+                                
+                                # Considera arquivos em um range mais amplo: -300s a +300s (5min)
+                                # Offset positivo: evento está DEPOIS do início do arquivo
+                                # Offset negativo: evento está ANTES do início do arquivo (pode estar no arquivo anterior)
+                                if -300 <= alt_offset <= 300:
+                                    candidates_with_priority.append((alt_filepath, alt_file_time, alt_offset, time_distance))
+                            
+                            # Ordena por distância temporal (mais próximo primeiro)
+                            candidates_with_priority.sort(key=lambda x: x[3])
+                            
+                            print(f"      Encontrados {len(candidates_with_priority)} candidatos no range de ±5min")
+                            
+                            # Testa candidatos na ordem de proximidade
+                            for alt_filepath, alt_file_time, alt_offset, time_distance in candidates_with_priority:
+                                alt_filename = os.path.basename(alt_filepath)
+                                print(f"      Testando: {alt_filename} (offset: {alt_offset:.1f}s)")
+                                
+                                # Valida pixel format e duração
+                                try:
+                                    alt_probe = subprocess.run(
+                                        ["ffprobe", "-v", "error", "-select_streams", "v:0",
+                                         "-show_entries", "stream=pix_fmt,duration",
+                                         "-of", "default=noprint_wrappers=1", alt_filepath],
+                                        capture_output=True, text=True, timeout=10
+                                    )
+                                    
+                                    if alt_probe.returncode != 0:
+                                        print(f"        ✗ Erro ao validar arquivo")
+                                        continue
+                                    
+                                    # Verifica pixel format
+                                    if "pix_fmt=unknown" in alt_probe.stdout or "pix_fmt=none" in alt_probe.stdout:
+                                        print(f"        ✗ Pixel format inválido")
+                                        continue
+                                    
+                                    if "pix_fmt=yuv420p" not in alt_probe.stdout:
+                                        print(f"        ⚠ Pixel format diferente de yuv420p")
+                                        # Continua mesmo assim, pode funcionar
+                                    
+                                    # Extrai duração
+                                    alt_duration = None
+                                    for line in alt_probe.stdout.split('\n'):
+                                        if line.startswith('duration='):
+                                            try:
+                                                alt_duration = float(line.split('=')[1])
+                                                break
+                                            except:
+                                                pass
+                                    
+                                    if alt_duration is None or alt_duration < 10:
+                                        print(f"        ✗ Duração inválida ou muito curta")
+                                        continue
+                                    
+                                    # Verifica se o evento cabe dentro deste arquivo
+                                    if alt_offset >= 0:
+                                        # Evento está DEPOIS do início do arquivo
+                                        if alt_offset <= alt_duration:
+                                            target_file = alt_filepath
+                                            file_start_time = alt_file_time
+                                            offset_in_file = alt_offset
+                                            file_duration = alt_duration
+                                            print(f"        ✓ Arquivo alternativo válido!")
+                                            print(f"          Offset: {alt_offset:.1f}s, Duração: {alt_duration:.1f}s")
+                                            is_reference_file = True
+                                            needs_reencode = True
+                                            found_alternative = True
+                                            break
+                                        else:
+                                            print(f"        ✗ Evento além da duração do arquivo ({alt_offset:.1f}s > {alt_duration:.1f}s)")
+                                    else:
+                                        # Offset negativo: evento está ANTES do início deste arquivo
+                                        # Pode usar o evento como próximo ao início (primeiros segundos)
+                                        # Útil quando o arquivo original corrompido está antes deste
+                                        if abs(alt_offset) <= 60:  # Permite usar arquivo que começa até 60s depois do evento
+                                            # Usa do início do arquivo (offset=0)
+                                            target_file = alt_filepath
+                                            file_start_time = alt_file_time
+                                            offset_in_file = 0  # Começa do início
+                                            file_duration = alt_duration
+                                            print(f"        ✓ Arquivo alternativo válido (usando início do arquivo)!")
+                                            print(f"          Evento {abs(alt_offset):.1f}s antes do início, usando primeiros {duration}s")
+                                            print(f"          NOTA: Vídeo será dos primeiros {duration}s após o arquivo começar")
+                                            print(f"          Duração do arquivo: {alt_duration:.1f}s")
+                                            is_reference_file = True
+                                            needs_reencode = True
+                                            found_alternative = True
+                                            # NOTA: O vídeo não será exatamente do momento do evento,
+                                            # mas os primeiros segundos depois (melhor que nada)
+                                            break
+                                        else:
+                                            print(f"        ✗ Evento muito antes do início ({abs(alt_offset):.1f}s > 60s)")
+                                    
+                                except Exception as e:
+                                    print(f"        ✗ Erro ao validar: {e}")
+                                    continue
+                            
+                            if not found_alternative:
+                                print(f"      ERRO: Nenhum arquivo alternativo válido encontrado entre {len(candidates_with_priority)} candidatos")
+                                return False
+                        else:
+                            needs_reencode = True
+                            print(f"DEBUG: Pixel format válido, usando re-encoding para HEVC")
+                            
+                    except Exception as e:
+                        print(f"DEBUG: Erro ao verificar codec: {e}, assumindo necessidade de re-encoding")
+                        needs_reencode = True
+                
+                # Monta o comando ffmpeg baseado na necessidade de re-encoding
+                if needs_reencode:
+                    extract_cmd = [
+                        "ffmpeg", "-y",
+                        "-err_detect", "ignore_err",
+                        "-analyzeduration", "10M",  # Aumenta análise para HEVC
+                        "-probesize", "10M",
+                        "-i", target_file,
+                        "-ss", str(offset_seconds),
+                        "-t", str(effective_duration),
+                        "-c:v", "libx264",  # Re-encode para H.264
+                        "-preset", "fast",
+                        "-crf", "23",
+                        "-avoid_negative_ts", "make_zero",
+                        "-movflags", "+faststart",
+                        output_file
+                    ]
+                    print(f"Extraindo vídeo com RE-ENCODING: arquivo={os.path.basename(target_file)}, offset={offset_seconds:.2f}s, duração={effective_duration}s")
+                else:
+                    extract_cmd = [
+                        "ffmpeg", "-y",
+                        "-err_detect", "ignore_err",  # Ignora erros de decodificação/pacotes corrompidos
+                        "-i", target_file,
+                        "-ss", str(offset_seconds),
+                        "-t", str(effective_duration),
+                        "-c:v", "copy",
+                        "-avoid_negative_ts", "make_zero",
+                        "-movflags", "+faststart",
+                        output_file
+                    ]
+                    print(f"Extraindo vídeo: arquivo={os.path.basename(target_file)}, offset={offset_seconds:.2f}s, duração={effective_duration}s")
+                
                 print(f"      Recuperando {effective_duration}s ANTES do evento (de {offset_seconds:.2f}s até {offset_seconds + effective_duration:.2f}s)")
                 result = subprocess.run(extract_cmd, capture_output=True, text=True, timeout=120)
             
