@@ -1,8 +1,20 @@
 from flask import Blueprint, jsonify, request
 import os
+import sys
 import time
 import subprocess
 from datetime import datetime
+from urllib.parse import urlparse
+
+# Importa cliente API proprietária P6S CGI
+try:
+    _scripts_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'scripts')
+    if _scripts_dir not in sys.path:
+        sys.path.insert(0, _scripts_dir)
+    from camera_proprietary_client import CameraClient as _ProprietaryCameraClient
+    _PROPRIETARY_CLIENT_AVAILABLE = True
+except ImportError:
+    _PROPRIETARY_CLIENT_AVAILABLE = False
 
 # Cria um blueprint para as rotas de status
 status_bp = Blueprint('status', __name__)
@@ -357,6 +369,216 @@ def init_status_routes(ffmpeg_manager=None):
             status_code = 500  # Internal Server Error
         
         return jsonify(health_data), status_code
+
+    def _parse_rtsp_origin(rtsp_url):
+        """Extrai host/credenciais de uma URL RTSP."""
+        try:
+            parsed = urlparse(rtsp_url)
+            if parsed.scheme != 'rtsp' or not parsed.hostname:
+                return None
+            return {
+                "host": parsed.hostname,
+                "username": parsed.username,
+                "password": parsed.password,
+            }
+        except Exception:
+            return None
+
+    def _cgi_credentials(camera_name, rtsp_origin):
+        """Retorna (user, password) para a API CGI da camera.
+
+        Prioridade:
+          1. CAMERA_X_CGI_USER / CAMERA_X_CGI_PASSWORD  (env vars)
+          2. usuario da URL RTSP + senha vazia           (padrao seguro)
+        A senha CGI normalmente e diferente da senha RTSP.
+        """
+        suffix = '0' if camera_name == 'camera_0' else '1'
+        cgi_user = os.environ.get(f'CAMERA_{suffix}_CGI_USER',
+                                  rtsp_origin.get('username') or 'admin')
+        cgi_pass = os.environ.get(f'CAMERA_{suffix}_CGI_PASSWORD', '')
+        return cgi_user, cgi_pass
+
+    @status_bp.route('/proprietary/ptz/zoom', methods=['POST'])
+    def proprietary_ptz_zoom():
+        """
+        Controla zoom óptico via API proprietária P6S CGI.
+
+        Body JSON:
+        {
+          "camera": "camera_0" | "camera_1",
+          "action": "in" | "out",
+          "speed": 5,
+          "seconds": 2.0
+        }
+        """
+        if not _PROPRIETARY_CLIENT_AVAILABLE:
+            return jsonify({"status": "error", "message": "camera_proprietary_client não disponível"}), 503
+
+        data = request.get_json(silent=True) or {}
+        camera_name = data.get('camera', 'camera_0')
+        action = str(data.get('action', '')).lower()
+        speed = data.get('speed', 5)
+        seconds = data.get('seconds', 2.0)
+
+        if camera_name not in ('camera_0', 'camera_1'):
+            return jsonify({"status": "error", "message": "camera deve ser camera_0 ou camera_1"}), 400
+
+        if action not in ('in', 'out'):
+            return jsonify({"status": "error", "message": "action deve ser in ou out"}), 400
+
+        try:
+            speed = max(1, min(10, int(speed)))
+        except (TypeError, ValueError):
+            return jsonify({"status": "error", "message": "speed deve ser número inteiro 1-10"}), 400
+
+        try:
+            seconds = float(seconds)
+        except (TypeError, ValueError):
+            return jsonify({"status": "error", "message": "seconds deve ser número"}), 400
+
+        env_key = 'CAMERA_0_RTSP_URL' if camera_name == 'camera_0' else 'CAMERA_1_RTSP_URL'
+        rtsp_url = os.environ.get(env_key, '')
+        if not rtsp_url.startswith('rtsp://'):
+            return jsonify({"status": "error", "message": f"{env_key} não está configurada"}), 400
+
+        origin = _parse_rtsp_origin(rtsp_url)
+        if not origin:
+            return jsonify({"status": "error", "message": "Falha ao analisar origem RTSP"}), 400
+
+        cgi_user, cgi_pass = _cgi_credentials(camera_name, origin)
+
+        try:
+            client = _ProprietaryCameraClient(
+                host=origin['host'],
+                user=cgi_user,
+                password=cgi_pass,
+            )
+            auth_result = client.login()
+            if not auth_result.ok:
+                return jsonify({
+                    "status": "error",
+                    "message": f"Falha na autenticação: {auth_result.message}"
+                }), 502
+
+            if action == 'in':
+                client.zoom_in(speed=speed, seconds=seconds)
+            else:
+                client.zoom_out(speed=speed, seconds=seconds)
+
+            return jsonify({
+                "status": "success",
+                "camera": camera_name,
+                "action": action,
+                "speed": speed,
+                "seconds": seconds,
+                "host": origin['host'],
+                "cgi_user": cgi_user
+            }), 200
+        except PermissionError as e:
+            return jsonify({
+                "status": "error",
+                "message": str(e),
+                "camera": camera_name,
+                "hint": "Configure CAMERA_0_CGI_PASSWORD ou CAMERA_1_CGI_PASSWORD no .env"
+            }), 401
+        except Exception as e:
+            return jsonify({
+                "status": "error",
+                "message": f"Falha ao executar zoom: {str(e)}",
+                "camera": camera_name,
+                "action": action
+            }), 502
+
+    @status_bp.route('/proprietary/ptz/focus', methods=['POST'])
+    def proprietary_ptz_focus():
+        """
+        Controla foco via API proprietária P6S CGI (FocusFar / FocusNear).
+
+        Body JSON:
+        {
+          "camera": "camera_0" | "camera_1",
+          "action": "near" | "far",
+          "speed": 5,
+          "seconds": 2.0
+        }
+        """
+        if not _PROPRIETARY_CLIENT_AVAILABLE:
+            return jsonify({"status": "error", "message": "camera_proprietary_client não disponível"}), 503
+
+        data = request.get_json(silent=True) or {}
+        camera_name = data.get('camera', 'camera_0')
+        action = str(data.get('action', '')).lower()
+        speed = data.get('speed', 5)
+        seconds = data.get('seconds', 2.0)
+
+        if camera_name not in ('camera_0', 'camera_1'):
+            return jsonify({"status": "error", "message": "camera deve ser camera_0 ou camera_1"}), 400
+
+        if action not in ('near', 'far'):
+            return jsonify({"status": "error", "message": "action deve ser near ou far"}), 400
+
+        try:
+            speed = max(1, min(10, int(speed)))
+        except (TypeError, ValueError):
+            return jsonify({"status": "error", "message": "speed deve ser número inteiro 1-10"}), 400
+
+        try:
+            seconds = float(seconds)
+        except (TypeError, ValueError):
+            return jsonify({"status": "error", "message": "seconds deve ser número"}), 400
+
+        env_key = 'CAMERA_0_RTSP_URL' if camera_name == 'camera_0' else 'CAMERA_1_RTSP_URL'
+        rtsp_url = os.environ.get(env_key, '')
+        if not rtsp_url.startswith('rtsp://'):
+            return jsonify({"status": "error", "message": f"{env_key} não está configurada"}), 400
+
+        origin = _parse_rtsp_origin(rtsp_url)
+        if not origin:
+            return jsonify({"status": "error", "message": "Falha ao analisar origem RTSP"}), 400
+
+        cgi_user, cgi_pass = _cgi_credentials(camera_name, origin)
+
+        try:
+            client = _ProprietaryCameraClient(
+                host=origin['host'],
+                user=cgi_user,
+                password=cgi_pass,
+            )
+            auth_result = client.login()
+            if not auth_result.ok:
+                return jsonify({
+                    "status": "error",
+                    "message": f"Falha na autenticação: {auth_result.message}"
+                }), 502
+
+            if action == 'far':
+                client.focus_far(speed=speed, seconds=seconds)
+            else:
+                client.focus_near(speed=speed, seconds=seconds)
+
+            return jsonify({
+                "status": "success",
+                "camera": camera_name,
+                "action": action,
+                "speed": speed,
+                "seconds": seconds,
+                "host": origin['host'],
+                "cgi_user": cgi_user
+            }), 200
+        except PermissionError as e:
+            return jsonify({
+                "status": "error",
+                "message": str(e),
+                "camera": camera_name,
+                "hint": "Configure CAMERA_0_CGI_PASSWORD ou CAMERA_1_CGI_PASSWORD no .env"
+            }), 401
+        except Exception as e:
+            return jsonify({
+                "status": "error",
+                "message": f"Falha ao executar foco: {str(e)}",
+                "camera": camera_name,
+                "action": action
+            }), 502
 
     @status_bp.route('/update_time', methods=['POST'])
     def update_time():
